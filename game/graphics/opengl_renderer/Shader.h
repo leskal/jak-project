@@ -69,6 +69,11 @@ enum class ShaderId {
   SLOW_TIME = 42,
   OCEAN_ENVMAP = 43,
   OCEAN_ENVMAP_HAZE = 44,
+  SSAO = 45,            // (AI-assisted) ambient occlusion mod
+  SSAO_BLUR = 46,
+  SSAO_COMPOSITE = 47,
+  SUN_SHADOW = 48,      // (AI-assisted) relighting mod sun shadows
+  SUN_SHADOW_DEBUG = 49,
   MAX_SHADERS
 };
 

@@ -1008,6 +1008,13 @@ void OpenGLRenderer::render(DmaFollower dma, const RenderOptions& settings) {
     }
   }
 
+  // (AI-assisted) relighting mod: draw the sun shadow map before the level is drawn
+  {
+    g_current_renderer = "sun-shadow";
+    auto prof = m_profiler.root()->make_scoped_child("sun-shadow");
+    m_sun_shadow.render(&m_render_state, prof);
+  }
+
   // render the buckets!
   {
     auto prof = m_profiler.root()->make_scoped_child("buckets");
@@ -1018,6 +1025,9 @@ void OpenGLRenderer::render(DmaFollower dma, const RenderOptions& settings) {
       m_texture_animator->clear_stale_textures(m_render_state.frame_idx);
     }
   }
+
+  // (AI-assisted) relighting mod: optional shadow map view for debugging
+  m_sun_shadow.draw_overlay(&m_render_state);
 
   // blit framebuffer so that it can be used as a texture by the game later
   {
@@ -1143,6 +1153,40 @@ void OpenGLRenderer::draw_renderer_selection_window() {
   ImGui::Checkbox("Sky CPU", &m_render_state.use_sky_cpu);
   ImGui::Checkbox("Occlusion Cull", &m_render_state.use_occlusion_culling);
   ImGui::Checkbox("Blackout Loads", &m_enable_fast_blackout_loads);
+
+  // (AI-assisted) SSAO mod settings
+  if (ImGui::TreeNode("SSAO (ambient occlusion)")) {
+    m_ssao.draw_debug_window();
+    ImGui::TreePop();
+  }
+
+  // (AI-assisted) relighting mod settings
+  if (ImGui::TreeNode("Relighting (experimental)")) {
+    auto& rl = m_render_state.relight;
+    ImGui::SliderFloat("Relight amount", &rl.amount, 0.f, 1.f);
+    ImGui::Checkbox("Use the game's sun direction", &rl.use_game_sun);
+    ImGui::Checkbox("Use the game's light colors", &rl.use_game_colors);
+    if (rl.game_sun_valid) {
+      ImGui::Text("Game sun: dir (%.2f %.2f %.2f) color (%.2f %.2f %.2f)", rl.game_sun_dir[0],
+                  rl.game_sun_dir[1], rl.game_sun_dir[2], rl.game_sun_color[0],
+                  rl.game_sun_color[1], rl.game_sun_color[2]);
+    } else {
+      ImGui::Text("Game sun: not found yet (Jak not on screen)");
+    }
+    ImGui::SliderFloat("Sun direction (deg)", &rl.sun_azimuth_deg, 0.f, 360.f);
+    ImGui::SliderFloat("Sun height (deg)", &rl.sun_elevation_deg, 0.f, 90.f);
+    ImGui::SliderFloat("Sun intensity", &rl.sun_intensity, 0.f, 2.f);
+    ImGui::ColorEdit3("Sun color", rl.sun_color);
+    ImGui::SliderFloat("Ambient", &rl.ambient, 0.f, 1.5f);
+    ImGui::RadioButton("Lit", &rl.debug, 0);
+    ImGui::SameLine();
+    ImGui::RadioButton("Show normals", &rl.debug, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Show shadows", &rl.debug, 2);
+    ImGui::Separator();
+    m_sun_shadow.draw_debug_window();
+    ImGui::TreePop();
+  }
 
   if (m_texture_animator && ImGui::TreeNode("Texture Animator")) {
     m_texture_animator->draw_debug_window();
@@ -1341,6 +1385,15 @@ void OpenGLRenderer::dispatch_buckets_jak1(DmaFollower dma,
     m_render_state.next_bucket += 16;
     vif_interrupt_callback(bucket_id);
     m_category_times[(int)m_bucket_categories[bucket_id]] += bucket_prof.get_elapsed_time();
+
+    // (AI-assisted) SSAO mod: level geometry, blended ground layers and characters (incl. Jak,
+    // who is drawn in MERC_AFTER_ALPHA) are drawn by now. Shadows, water, particles and the HUD
+    // come after. Darken the image here.
+    if ((int)bucket_id == m_ssao.jak1_after_bucket) {
+      g_current_renderer = "ssao";
+      auto p = prof.make_scoped_child("ssao");
+      m_ssao.render(&m_render_state, p, m_fbo_state.render_fbo->multisample_count);
+    }
 
     // hack to draw the collision mesh in the middle the drawing
     if (bucket_id == 31 - 1 && Gfx::g_global_settings.collision_enable) {

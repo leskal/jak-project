@@ -496,6 +496,26 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
   memcpy(&current_lights, input_data, sizeof(VuLights));
   input_data += sizeof(VuLights);
 
+  // (AI-assisted) relighting mod: the game lights Jak with its time-of-day lights, and light 0 is
+  // the sun. Remember it so the level can be lit from the same direction (used next frame, since
+  // the level is drawn before the characters).
+  // The light directions are stored transposed: light 0 = (direction0.x, direction1.x, direction2.x)
+  if (strncmp(name, "eichar", 6) == 0 || strncmp(name, "jakb", 4) == 0 ||
+      strncmp(name, "jakc", 4) == 0) {
+    math::Vector3f d(current_lights.direction0.x(), current_lights.direction1.x(),
+                     current_lights.direction2.x());
+    float len = d.length();
+    if (len > 1e-4f) {
+      auto& rl = render_state->relight;
+      for (int i = 0; i < 3; i++) {
+        rl.game_sun_dir[i] = d[i] / len;
+        rl.game_sun_color[i] = current_lights.color0[i];
+        rl.game_ambient[i] = current_lights.ambient[i];
+      }
+      rl.game_sun_valid = true;
+    }
+  }
+
   u64 uses_water = 0;
   if (render_state->version == GameVersion::Jak1) {
     // jak 1 figures out water at runtime sadly

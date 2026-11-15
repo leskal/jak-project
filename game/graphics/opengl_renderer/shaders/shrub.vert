@@ -4,6 +4,7 @@ layout (location = 0) in vec3 position_in;
 layout (location = 1) in vec3 tex_coord_in;
 layout (location = 2) in vec3 rgba_base;
 layout (location = 3) in int time_of_day_index;
+layout (location = 4) in vec4 normal_in;  // (AI-assisted) relighting
 
 uniform vec4 hvdf_offset;
 uniform mat4 camera;
@@ -18,6 +19,8 @@ uniform sampler1D tex_T10; // note, sampled in the vertex shader on purpose.
 out vec4 fragment_color;
 out vec3 tex_coord;
 out float fogginess;
+out vec3 world_normal;  // (AI-assisted) relighting
+out vec3 view_dir;
 
 void main() {
   // old system:
@@ -62,4 +65,6 @@ void main() {
 
   tex_coord = tex_coord_in;
   tex_coord.xy /= 4096;
+  world_normal = normal_in.xyz;
+  view_dir = vert;
 }

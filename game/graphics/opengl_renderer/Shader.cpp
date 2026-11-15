@@ -136,6 +136,11 @@ ShaderLibrary::ShaderLibrary(GameVersion version) {
   at(ShaderId::SLOW_TIME) = {"slow_time", version};
   at(ShaderId::OCEAN_ENVMAP) = {"ocean_envmap", version};
   at(ShaderId::OCEAN_ENVMAP_HAZE) = {"ocean_envmap_haze", version};
+  at(ShaderId::SSAO) = {"ssao", version};
+  at(ShaderId::SSAO_BLUR) = {"ssao_blur", version};
+  at(ShaderId::SSAO_COMPOSITE) = {"ssao_composite", version};
+  at(ShaderId::SUN_SHADOW) = {"sun_shadow", version};
+  at(ShaderId::SUN_SHADOW_DEBUG) = {"sun_shadow_debug", version};
 
   for (auto& shader : m_shaders) {
     ASSERT_MSG(shader.okay(), "error compiling shader");

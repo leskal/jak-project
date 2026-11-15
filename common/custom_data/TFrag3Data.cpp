@@ -1,7 +1,9 @@
 #include "Tfrag3Data.h"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
+#include <unordered_map>
 
 #include "common/log/log.h"
 #include "common/util/Assert.h"
@@ -231,6 +233,126 @@ void tie_normal_v3(__m128* out, const std::array<math::Vector4f, 4>& in) {
 }
  */
 
+namespace {
+/*!
+ * (AI-assisted) Relighting mod.
+ * Level geometry (tfrag, and tie without normals) has no normals in the game data, because the
+ * lighting was baked into vertex colors. Compute smooth normals from the triangles so the
+ * renderer can light it. Only vertices with nor == 0 are changed.
+ * Vertices at the same position are "welded" so normals are smooth across texture seams.
+ * Triangle winding in the game data is not reliable, so normals are added up with a consistent
+ * sign; the shader flips them to face the camera.
+ */
+std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
+                                       const std::vector<u32>& indices,
+                                       bool strips) {
+  struct Key {
+    s64 x, y, z;
+    bool operator==(const Key& o) const { return x == o.x && y == o.y && z == o.z; }
+  };
+  struct KeyHash {
+    size_t operator()(const Key& k) const {
+      return std::hash<s64>()(k.x * 73856093LL ^ k.y * 19349663LL ^ k.z * 83492791LL);
+    }
+  };
+  // 16 game units = ~4 mm
+  std::unordered_map<Key, u32, KeyHash> pos_to_slot;
+  pos_to_slot.reserve(verts.size());
+  std::vector<u32> slot_of(verts.size());
+  for (size_t i = 0; i < verts.size(); i++) {
+    Key k{(s64)std::llround(verts[i].x() / 16.f), (s64)std::llround(verts[i].y() / 16.f),
+          (s64)std::llround(verts[i].z() / 16.f)};
+    auto it = pos_to_slot.emplace(k, (u32)pos_to_slot.size()).first;
+    slot_of[i] = it->second;
+  }
+  std::vector<math::Vector3f> acc(pos_to_slot.size(), math::Vector3f::zero());
+
+  auto add_tri = [&](u32 a, u32 b, u32 c) {
+    if (a == b || b == c || a == c || a >= verts.size() || b >= verts.size() ||
+        c >= verts.size()) {
+      return;
+    }
+    const math::Vector3f& pa = verts[a];
+    const math::Vector3f& pb = verts[b];
+    const math::Vector3f& pc = verts[c];
+    math::Vector3f fn = (pb - pa).cross(pc - pa);  // length = 2 * area: big faces count more
+    if (!(fn.squared_length() > 0.f)) {
+      return;
+    }
+    for (u32 v : {a, b, c}) {
+      auto& n = acc[slot_of[v]];
+      n += (n.dot(fn) < 0.f) ? fn * -1.f : fn;
+    }
+  };
+
+  if (strips) {
+    size_t run_start = 0;
+    for (size_t i = 0; i < indices.size(); i++) {
+      if (indices[i] == UINT32_MAX) {
+        run_start = i + 1;
+        continue;
+      }
+      size_t k = i - run_start;
+      if (k >= 2) {
+        add_tri(indices[i - 2], indices[i - 1], indices[i]);
+      }
+    }
+  } else {
+    u32 tri[3];
+    int n = 0;
+    for (u32 idx : indices) {
+      if (idx == UINT32_MAX) {
+        n = 0;
+        continue;
+      }
+      tri[n++] = idx;
+      if (n == 3) {
+        add_tri(tri[0], tri[1], tri[2]);
+        n = 0;
+      }
+    }
+  }
+
+  std::vector<u32> result(verts.size(), 0);
+  for (size_t i = 0; i < verts.size(); i++) {
+    const auto& n = acc[slot_of[i]];
+    float len = n.length();
+    if (len > 0.f) {
+      result[i] = pack_to_gl_normal((s16)std::lround(n.x() / len * 511.f),
+                                    (s16)std::lround(n.y() / len * 511.f),
+                                    (s16)std::lround(n.z() / len * 511.f));
+    }
+  }
+  return result;
+}
+
+void compute_missing_normals(std::vector<PreloadedVertex>& verts,
+                             const std::vector<u32>& indices,
+                             bool strips) {
+  bool any_missing = false;
+  for (const auto& v : verts) {
+    if (v.nor == 0) {
+      any_missing = true;
+      break;
+    }
+  }
+  if (!any_missing) {
+    return;
+  }
+  std::vector<math::Vector3f> pos;
+  pos.reserve(verts.size());
+  for (const auto& v : verts) {
+    pos.emplace_back(v.x, v.y, v.z);
+  }
+  auto packed = smooth_normals_packed(pos, indices, strips);
+  for (size_t i = 0; i < verts.size(); i++) {
+    if (verts[i].nor == 0) {
+      verts[i].nor = packed[i];
+    }
+  }
+}
+}  // namespace
+
 void TieTree::unpack() {
   unpacked.vertices.resize(packed_vertices.color_indices.size());
   size_t i = 0;
@@ -317,6 +439,16 @@ void TieTree::unpack() {
     unpacked.indices.insert(unpacked.indices.end(), draw.plain_indices.begin(),
                             draw.plain_indices.end());
   }
+  // (AI-assisted) relighting: wind (swaying) protos are drawn with their own index lists
+  {
+    std::vector<u32> all_indices = unpacked.indices;
+    for (const auto& wd : instanced_wind_draws) {
+      all_indices.push_back(UINT32_MAX);
+      all_indices.insert(all_indices.end(), wd.vertex_index_stream.begin(),
+                         wd.vertex_index_stream.end());
+    }
+    compute_missing_normals(unpacked.vertices, all_indices, use_strips);
+  }
 }
 
 void ShrubTree::unpack() {
@@ -340,6 +472,17 @@ void ShrubTree::unpack() {
     }
   }
   ASSERT(i == unpacked.vertices.size());
+
+  // (AI-assisted) relighting: compute normals, stored in the unused pad0 field
+  std::vector<math::Vector3f> pos;
+  pos.reserve(unpacked.vertices.size());
+  for (const auto& v : unpacked.vertices) {
+    pos.emplace_back(v.x, v.y, v.z);
+  }
+  auto packed = smooth_normals_packed(pos, indices, true);
+  for (size_t vi = 0; vi < unpacked.vertices.size(); vi++) {
+    unpacked.vertices[vi].pad0 = packed[vi];
+  }
 }
 
 void TfragTree::unpack() {
@@ -375,6 +518,7 @@ void TfragTree::unpack() {
     unpacked.indices.insert(unpacked.indices.end(), draw.plain_indices.begin(),
                             draw.plain_indices.end());
   }
+  compute_missing_normals(unpacked.vertices, unpacked.indices, use_strips);  // (AI-assisted)
 }
 
 void TieTree::serialize(Serializer& ser) {

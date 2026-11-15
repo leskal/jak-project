@@ -144,6 +144,11 @@ void Shrub::update_load(const LevelData* loader_data) {
                            (void*)offsetof(tfrag3::ShrubGpuVertex, color_index)  // offset (0)
     );
 
+    // (AI-assisted) relighting mod: normals are stored in pad0
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 4, GL_INT_2_10_10_10_REV, GL_TRUE, sizeof(tfrag3::ShrubGpuVertex),
+                          (void*)offsetof(tfrag3::ShrubGpuVertex, pad0));
+
     glGenBuffers(1, &m_trees[l_tree].single_draw_index_buffer);
     glGenBuffers(1, &m_trees[l_tree].index_buffer);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_trees[l_tree].index_buffer);

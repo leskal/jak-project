@@ -970,6 +970,10 @@ void Tie3::render_tree_wind(int idx,
 
       glUniformMatrix4fv(glGetUniformLocation(render_state->shaders[shader_id].id(), "camera"), 1,
                          GL_FALSE, tree.wind_matrix_cache.at(grp.instance_idx)[0].data());
+      // (AI-assisted) relighting: the instance's own placement, to put normals in world space
+      glUniformMatrix4fv(
+          glGetUniformLocation(render_state->shaders[shader_id].id(), "wind_model"), 1, GL_FALSE,
+          tree.instance_info->at(grp.instance_idx).matrix[0].data());
 
       prof.add_draw_call();
       prof.add_tri(grp.num);

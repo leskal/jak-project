@@ -58,6 +58,34 @@ struct SharedRenderState {
   math::Vector4f camera_hvdf_off;
   math::Vector4f camera_fog;
   math::Vector4f camera_pos;
+  // perspective matrix from the game, used by the SSAO mod to rebuild distances (AI-assisted)
+  math::Vector4f camera_persp[4];
+
+  // (AI-assisted) relighting mod: real sun lighting on level geometry
+  struct RelightSettings {
+    float amount = 0.5f;            // 0 = original baked lighting, 1 = fully relit
+    float sun_azimuth_deg = 45.f;   // compass direction of the sun
+    float sun_elevation_deg = 50.f; // height of the sun above the horizon
+    float sun_intensity = 0.8f;
+    float sun_color[3] = {1.f, 0.95f, 0.85f};
+    float ambient = 0.55f;          // light that comes from everywhere (sky)
+    int debug = 0;                  // 1 = show normals as colors
+
+    // sun taken from the game (the light the game uses on Jak, see Merc2.cpp)
+    bool use_game_sun = true;       // use the game's sun direction instead of the sliders
+    bool use_game_colors = false;   // also use the game's sun and ambient colors
+    bool game_sun_valid = false;
+    float game_sun_dir[3] = {0, 1, 0};
+    float game_sun_color[3] = {1, 1, 1};
+    float game_ambient[3] = {0.5f, 0.5f, 0.5f};
+
+    // sun shadows (filled in each frame by SunShadow)
+    bool shadow_valid = false;
+    GLuint shadow_tex = 0;
+    float shadow_mat[16] = {};  // world -> shadow map texture coordinates
+    float shadow_strength = 0.f;
+    float shadow_normal_offset = 0.f;  // game units
+  } relight;
 
   EyeRenderer* eye_renderer = nullptr;
 

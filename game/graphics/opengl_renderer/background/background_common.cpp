@@ -2,6 +2,8 @@
 
 #include "background_common.h"
 
+#include <cmath>
+
 #include "common/util/os.h"
 #include "common/util/simd_util.h"
 
@@ -274,6 +276,47 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
   glUniform4f(glGetUniformLocation(id, "fog_color"), render_state->fog_color[0] / 255.f,
               render_state->fog_color[1] / 255.f, render_state->fog_color[2] / 255.f,
               render_state->fog_intensity / 255);
+
+  // (AI-assisted) relighting mod. Shaders that don't use these just ignore them.
+  {
+    const auto& rl = render_state->relight;
+    const float az = rl.sun_azimuth_deg * 3.14159265f / 180.f;
+    const float el = rl.sun_elevation_deg * 3.14159265f / 180.f;
+    glUniform1f(glGetUniformLocation(id, "relight_amount"), rl.amount);
+    // direction towards the sun, in world space (y is up)
+    if (rl.use_game_sun && rl.game_sun_valid) {
+      glUniform3f(glGetUniformLocation(id, "sun_dir"), rl.game_sun_dir[0], rl.game_sun_dir[1],
+                  rl.game_sun_dir[2]);
+    } else {
+      glUniform3f(glGetUniformLocation(id, "sun_dir"), std::cos(el) * std::sin(az), std::sin(el),
+                  std::cos(el) * std::cos(az));
+    }
+    if (rl.use_game_colors && rl.game_sun_valid) {
+      glUniform3f(glGetUniformLocation(id, "sun_color"), rl.game_sun_color[0] * rl.sun_intensity,
+                  rl.game_sun_color[1] * rl.sun_intensity,
+                  rl.game_sun_color[2] * rl.sun_intensity);
+      glUniform3f(glGetUniformLocation(id, "ambient_color"), rl.game_ambient[0] * rl.ambient * 2.f,
+                  rl.game_ambient[1] * rl.ambient * 2.f, rl.game_ambient[2] * rl.ambient * 2.f);
+    } else {
+      glUniform3f(glGetUniformLocation(id, "sun_color"), rl.sun_color[0] * rl.sun_intensity,
+                  rl.sun_color[1] * rl.sun_intensity, rl.sun_color[2] * rl.sun_intensity);
+      glUniform3f(glGetUniformLocation(id, "ambient_color"), rl.ambient, rl.ambient, rl.ambient);
+    }
+    glUniform1i(glGetUniformLocation(id, "relight_debug"), rl.debug);
+
+    // sun shadows. The sampler is always pointed at unit 6, so it never shares a unit with a
+    // normal texture (OpenGL refuses to draw if two sampler types share a unit).
+    glUniform1i(glGetUniformLocation(id, "shadow_tex"), 6);
+    glUniform1i(glGetUniformLocation(id, "shadow_enabled"), rl.shadow_valid ? 1 : 0);
+    if (rl.shadow_valid) {
+      glActiveTexture(GL_TEXTURE6);
+      glBindTexture(GL_TEXTURE_2D, rl.shadow_tex);
+      glActiveTexture(GL_TEXTURE0);
+      glUniformMatrix4fv(glGetUniformLocation(id, "shadow_mat"), 1, GL_FALSE, rl.shadow_mat);
+      glUniform1f(glGetUniformLocation(id, "shadow_strength"), rl.shadow_strength);
+      glUniform1f(glGetUniformLocation(id, "shadow_normal_offset"), rl.shadow_normal_offset);
+    }
+  }
 }
 
 void interp_time_of_day_slow(const math::Vector<s32, 4> itimes[4],
@@ -820,6 +863,7 @@ void update_render_state_from_pc_settings(SharedRenderState* state, const TfragP
     for (int i = 0; i < 4; i++) {
       state->camera_planes[i] = data.camera.planes[i];
       state->camera_matrix[i] = data.camera.camera[i];
+      state->camera_persp[i] = data.camera.perspective[i];  // (AI-assisted) for SSAO
     }
     state->camera_pos = data.camera.trans;
     state->camera_hvdf_off = data.camera.hvdf_off;
