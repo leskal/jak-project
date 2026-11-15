@@ -38,6 +38,11 @@ class SunShadow {
   bool tfrag_casts = true;     // ground/walls cast shadows
   bool tie_casts = true;       // objects cast shadows
   bool show_map = false;       // show the shadow map on screen
+  bool chars_cast = true;      // characters cast shadows (on the level, one frame later)
+  bool chars_receive = true;   // characters get darker in shadows
+  int char_resolution = 2048;
+  bool hide_blob_shadow = true;  // hide the game's own blob shadow when characters cast real ones
+  bool blob_hidden_by_mod = false;  // (internal) we turned the blob shadow renderer off
 
  private:
   void setup_target();
@@ -58,4 +63,13 @@ class SunShadow {
   int m_last_draw_calls = 0;
   GLenum m_fbo_status = 0;
   GLuint m_quad_vao = 0, m_quad_vbo = 0;
+
+  // character shadow maps: one is drawn this frame, the other (last frame's) is read
+  void setup_char_targets();
+  GLuint m_char_fbo[2] = {0, 0};
+  GLuint m_char_tex[2] = {0, 0};
+  int m_char_res = 0;
+  int m_char_write = 0;
+  bool m_char_prev_valid = false;
+  float m_char_prev_mat[16] = {};
 };

@@ -1013,6 +1013,20 @@ void OpenGLRenderer::render(DmaFollower dma, const RenderOptions& settings) {
     g_current_renderer = "sun-shadow";
     auto prof = m_profiler.root()->make_scoped_child("sun-shadow");
     m_sun_shadow.render(&m_render_state, prof);
+
+    // Jak 1 draws a dark blob shadow under characters. When they cast real sun shadows, that would
+    // give them two shadows, so switch the blob shadow renderer off (and back on when not needed).
+    if (m_version == GameVersion::Jak1) {
+      auto& blob_enabled = m_bucket_renderers.at((int)jak1::BucketId::SHADOW)->enabled();
+      const bool hide = m_sun_shadow.hide_blob_shadow && m_render_state.relight.char_shadow_write;
+      if (hide) {
+        blob_enabled = false;
+        m_sun_shadow.blob_hidden_by_mod = true;
+      } else if (m_sun_shadow.blob_hidden_by_mod) {
+        blob_enabled = true;
+        m_sun_shadow.blob_hidden_by_mod = false;
+      }
+    }
   }
 
   // render the buckets!

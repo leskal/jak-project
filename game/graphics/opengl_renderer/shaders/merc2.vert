@@ -29,6 +29,12 @@ out vec2 vtx_st;
 
 out float fog;
 
+// (AI-assisted) relighting mod: sun shadows on characters
+uniform mat3 cam_rot;      // camera space = cam_rot * (world - cam_trans_m)
+uniform vec3 cam_trans_m;
+out vec3 merc_world;       // world position
+out vec3 vtx_sun;          // the part of vtx_color that comes from the sun (light 0)
+
 struct MercMatrixData {
   mat4 X;
   mat3 R;
@@ -99,5 +105,7 @@ void main() {
 
 
   vtx_color = rgba * light_color;
+  vtx_sun = rgba.rgb * light_intensity.x * light_col0.rgb;
+  merc_world = transpose(cam_rot) * (-vtx_pos.xyz) + cam_trans_m;
   vtx_st = st_in;
 }

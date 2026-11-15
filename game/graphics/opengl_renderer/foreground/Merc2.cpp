@@ -1217,7 +1217,115 @@ void Merc2::flush_draw_buckets(SharedRenderState* render_state,
                     m_shader_bone_vector_buffer);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
+    // (AI-assisted) relighting mod: draw these characters into the character sun shadow map
+    {
+      auto& rl = render_state->relight;
+      if (rl.char_shadow_write && render_state->has_pc_data && lev_bucket.next_free_draw) {
+        GLint old_fbo, old_vp[4], old_depth_func;
+        GLboolean old_cull = glIsEnabled(GL_CULL_FACE), old_blend = glIsEnabled(GL_BLEND),
+                  old_po = glIsEnabled(GL_POLYGON_OFFSET_FILL),
+                  old_scissor = glIsEnabled(GL_SCISSOR_TEST), old_depth_mask;
+        GLfloat old_po_factor, old_po_units;
+        glGetIntegerv(GL_FRAMEBUFFER_BINDING, &old_fbo);
+        glGetIntegerv(GL_VIEWPORT, old_vp);
+        glGetIntegerv(GL_DEPTH_FUNC, &old_depth_func);
+        glGetBooleanv(GL_DEPTH_WRITEMASK, &old_depth_mask);
+        glGetFloatv(GL_POLYGON_OFFSET_FACTOR, &old_po_factor);
+        glGetFloatv(GL_POLYGON_OFFSET_UNITS, &old_po_units);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, rl.char_shadow_fbo);
+        glViewport(0, 0, rl.char_shadow_res, rl.char_shadow_res);
+        glDisable(GL_BLEND);
+        glDisable(GL_CULL_FACE);
+        glDisable(GL_SCISSOR_TEST);
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        glDepthMask(GL_TRUE);
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(1.5f, 4.f);
+
+        auto& ssh = render_state->shaders[ShaderId::MERC_SHADOW];
+        ssh.activate();
+        const GLuint sid = ssh.id();
+        glUniformBlockBinding(sid, glGetUniformBlockIndex(sid, "ub_bones"), 1);
+        glUniformMatrix4fv(glGetUniformLocation(sid, "light_mat"), 1, GL_FALSE, rl.shadow_clip);
+        float cam_rot[9];
+        for (int c = 0; c < 3; c++) {
+          for (int r = 0; r < 3; r++) {
+            cam_rot[c * 3 + r] = render_state->camera_rot[c][r];
+          }
+        }
+        glUniformMatrix3fv(glGetUniformLocation(sid, "cam_rot"), 1, GL_FALSE, cam_rot);
+        glUniform3f(glGetUniformLocation(sid, "cam_trans"), render_state->camera_pos.x(),
+                    render_state->camera_pos.y(), render_state->camera_pos.z());
+
+        for (u32 di = 0; di < lev_bucket.next_free_draw; di++) {
+          const auto& draw = lev_bucket.draws[di];
+          if (draw.flags & MOD_VTX) {
+            glBindVertexArray(draw.mod_vtx_buffer.vao);
+          } else {
+            glBindVertexArray(m_vao);
+          }
+          glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, lev->merc_indices);
+          glBindBuffer(GL_ARRAY_BUFFER, lev->merc_vertices);
+          glBindBufferRange(GL_UNIFORM_BUFFER, 1, m_bones_buffer,
+                            sizeof(math::Vector4f) * draw.first_bone,
+                            128 * sizeof(ShaderMercMat));
+          glDrawElements(draw.no_strip ? GL_TRIANGLES : GL_TRIANGLE_STRIP, draw.index_count,
+                         GL_UNSIGNED_INT, (void*)(sizeof(u32) * draw.first_index));
+        }
+        glBindVertexArray(m_vao);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, lev->merc_indices);
+        glBindBuffer(GL_ARRAY_BUFFER, lev->merc_vertices);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, old_fbo);
+        glViewport(old_vp[0], old_vp[1], old_vp[2], old_vp[3]);
+        glDepthFunc(old_depth_func);
+        glDepthMask(old_depth_mask);
+        glPolygonOffset(old_po_factor, old_po_units);
+        if (old_po) {
+          glEnable(GL_POLYGON_OFFSET_FILL);
+        } else {
+          glDisable(GL_POLYGON_OFFSET_FILL);
+        }
+        if (old_cull) {
+          glEnable(GL_CULL_FACE);
+        }
+        if (old_blend) {
+          glEnable(GL_BLEND);
+        }
+        if (old_scissor) {
+          glEnable(GL_SCISSOR_TEST);
+        }
+      }
+    }
+
     switch_to_merc2(render_state);
+    // (AI-assisted) relighting mod: let characters receive sun shadows from the level
+    {
+      const auto& rl = render_state->relight;
+      const GLuint mid = render_state->shaders[ShaderId::MERC2].id();
+      const bool on = rl.shadow_valid && rl.chars_receive && render_state->has_pc_data;
+      glUniform1i(glGetUniformLocation(mid, "shadow_tex"), 6);
+      glUniform1i(glGetUniformLocation(mid, "shadow_enabled"), on ? 1 : 0);
+      glUniform1i(glGetUniformLocation(mid, "relight_debug"), rl.debug);
+      if (on) {
+        float cam_rot[9];
+        for (int c = 0; c < 3; c++) {
+          for (int r = 0; r < 3; r++) {
+            cam_rot[c * 3 + r] = render_state->camera_rot[c][r];
+          }
+        }
+        glUniformMatrix3fv(glGetUniformLocation(mid, "cam_rot"), 1, GL_FALSE, cam_rot);
+        glUniform3f(glGetUniformLocation(mid, "cam_trans_m"), render_state->camera_pos.x(),
+                    render_state->camera_pos.y(), render_state->camera_pos.z());
+        glUniformMatrix4fv(glGetUniformLocation(mid, "shadow_mat"), 1, GL_FALSE, rl.shadow_mat);
+        glUniform1f(glGetUniformLocation(mid, "shadow_strength"), rl.shadow_strength);
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, rl.shadow_tex);
+        glActiveTexture(GL_TEXTURE0);
+      }
+    }
     do_draws(lev_bucket.draws.data(), lev, lev_bucket.next_free_draw, m_merc_uniforms, prof, false,
              render_state);
     if (lev_bucket.next_free_envmap_draw) {

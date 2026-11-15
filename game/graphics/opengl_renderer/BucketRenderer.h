@@ -60,6 +60,8 @@ struct SharedRenderState {
   math::Vector4f camera_pos;
   // perspective matrix from the game, used by the SSAO mod to rebuild distances (AI-assisted)
   math::Vector4f camera_persp[4];
+  // camera rotation (camera space = rot * (world - camera_pos)), for the relighting mod
+  math::Vector4f camera_rot[4];
 
   // (AI-assisted) relighting mod: real sun lighting on level geometry
   struct RelightSettings {
@@ -85,6 +87,17 @@ struct SharedRenderState {
     float shadow_mat[16] = {};  // world -> shadow map texture coordinates
     float shadow_strength = 0.f;
     float shadow_normal_offset = 0.f;  // game units
+    float shadow_clip[16] = {};        // world -> shadow map clip space (for drawing into it)
+
+    // characters (filled in each frame by SunShadow, used by Merc2)
+    bool chars_receive = true;     // characters get darker in sun shadows
+    bool char_shadow_write = false;  // characters should be drawn into char_shadow_fbo
+    GLuint char_shadow_fbo = 0;
+    int char_shadow_res = 0;
+    // character shadows drawn last frame, read by the level shaders
+    bool char_shadow_valid = false;
+    GLuint char_shadow_tex = 0;
+    float char_shadow_mat[16] = {};
   } relight;
 
   EyeRenderer* eye_renderer = nullptr;

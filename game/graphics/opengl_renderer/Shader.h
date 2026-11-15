@@ -74,6 +74,7 @@ enum class ShaderId {
   SSAO_COMPOSITE = 47,
   SUN_SHADOW = 48,      // (AI-assisted) relighting mod sun shadows
   SUN_SHADOW_DEBUG = 49,
+  MERC_SHADOW = 50,
   MAX_SHADERS
 };
 

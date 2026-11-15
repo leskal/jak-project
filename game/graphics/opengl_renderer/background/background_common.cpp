@@ -316,6 +316,17 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
       glUniform1f(glGetUniformLocation(id, "shadow_strength"), rl.shadow_strength);
       glUniform1f(glGetUniformLocation(id, "shadow_normal_offset"), rl.shadow_normal_offset);
     }
+    // character shadows (from last frame), always on unit 7
+    glUniform1i(glGetUniformLocation(id, "char_shadow_tex"), 7);
+    glUniform1i(glGetUniformLocation(id, "char_shadow_enabled"),
+                rl.shadow_valid && rl.char_shadow_valid ? 1 : 0);
+    if (rl.shadow_valid && rl.char_shadow_valid) {
+      glActiveTexture(GL_TEXTURE7);
+      glBindTexture(GL_TEXTURE_2D, rl.char_shadow_tex);
+      glActiveTexture(GL_TEXTURE0);
+      glUniformMatrix4fv(glGetUniformLocation(id, "char_shadow_mat"), 1, GL_FALSE,
+                         rl.char_shadow_mat);
+    }
   }
 }
 
@@ -864,6 +875,7 @@ void update_render_state_from_pc_settings(SharedRenderState* state, const TfragP
       state->camera_planes[i] = data.camera.planes[i];
       state->camera_matrix[i] = data.camera.camera[i];
       state->camera_persp[i] = data.camera.perspective[i];  // (AI-assisted) for SSAO
+      state->camera_rot[i] = data.camera.rot[i];  // (AI-assisted) for character shadows
     }
     state->camera_pos = data.camera.trans;
     state->camera_hvdf_off = data.camera.hvdf_off;

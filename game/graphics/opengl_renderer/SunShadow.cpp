@@ -102,6 +102,10 @@ void setup_vao(GLuint vao, GLuint vertex_buffer, GLuint index_buffer) {
 
 SunShadow::~SunShadow() {
   free_target();
+  if (m_char_fbo[0]) {
+    glDeleteFramebuffers(2, m_char_fbo);
+    glDeleteTextures(2, m_char_tex);
+  }
   if (m_quad_vao) {
     glDeleteVertexArrays(1, &m_quad_vao);
     glDeleteBuffers(1, &m_quad_vbo);
@@ -151,12 +155,46 @@ void SunShadow::setup_target() {
   lg::info("SunShadow: shadow map {}x{}", m_tex_res, m_tex_res);
 }
 
+void SunShadow::setup_char_targets() {
+  if (m_char_fbo[0]) {
+    glDeleteFramebuffers(2, m_char_fbo);
+    glDeleteTextures(2, m_char_tex);
+  }
+  m_char_res = char_resolution;
+  glGenTextures(2, m_char_tex);
+  glGenFramebuffers(2, m_char_fbo);
+  for (int i = 0; i < 2; i++) {
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_char_tex[i]);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, m_char_res, m_char_res, 0,
+                 GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_char_fbo[i]);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_char_tex[i], 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+      lg::error("SunShadow: character shadow framebuffer {} is incomplete", i);
+    }
+  }
+  m_char_prev_valid = false;
+}
+
 void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof) {
   auto& rl = render_state->relight;
   rl.shadow_valid = false;
+  rl.char_shadow_write = false;
+  rl.char_shadow_valid = false;
+  rl.chars_receive = chars_receive;
   m_frame++;
   m_last_draw_calls = 0;
   if (!enabled || rl.amount <= 0.f || !render_state->loader) {
+    m_char_prev_valid = false;
     return;
   }
 
@@ -174,6 +212,7 @@ void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof
     L[2] = std::cos(el) * std::cos(az);
   }
   if (L[1] < 0.02) {
+    m_char_prev_valid = false;
     return;  // sun at or below the horizon: no sun shadows
   }
 
@@ -233,9 +272,39 @@ void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof
     rl.shadow_mat[col * 4 + 3] = clip[col * 4 + 3];
   }
 
+  for (int i = 0; i < 16; i++) {
+    rl.shadow_clip[i] = clip[i];
+  }
+
   // ---- draw the level from the sun ----
   auto p = prof.make_scoped_child("sun-shadow");
   ShadowStateSaver saved;
+
+  // character shadow maps: last frame's becomes readable, this frame's is cleared and handed to
+  // the character renderer (Merc2), which draws into it as characters are drawn.
+  if (chars_cast) {
+    if (!m_char_fbo[0] || m_char_res != char_resolution) {
+      setup_char_targets();
+    }
+    m_char_write = 1 - m_char_write;
+    const int read = 1 - m_char_write;
+    rl.char_shadow_valid = m_char_prev_valid;
+    rl.char_shadow_tex = m_char_tex[read];
+    for (int i = 0; i < 16; i++) {
+      rl.char_shadow_mat[i] = m_char_prev_mat[i];
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, m_char_fbo[m_char_write]);
+    glDepthMask(GL_TRUE);
+    glDisable(GL_SCISSOR_TEST);
+    glClearDepth(1.0);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    rl.char_shadow_fbo = m_char_fbo[m_char_write];
+    rl.char_shadow_res = m_char_res;
+    rl.char_shadow_write = true;
+    m_char_prev_valid = true;  // matrix copied below, once it's known
+  } else {
+    m_char_prev_valid = false;
+  }
 
   glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
   glViewport(0, 0, m_tex_res, m_tex_res);
@@ -352,6 +421,11 @@ void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof
   }
 
   rl.shadow_valid = true;
+  if (chars_cast) {
+    for (int i = 0; i < 16; i++) {
+      m_char_prev_mat[i] = rl.shadow_mat[i];  // characters drawn this frame use this frame's matrix
+    }
+  }
   rl.shadow_tex = m_depth_tex;
   rl.shadow_strength = strength;
   rl.shadow_normal_offset = normal_offset_m * 4096.f;
@@ -377,6 +451,10 @@ void SunShadow::draw_debug_window() {
   ImGui::Checkbox("Ground/walls cast shadows", &tfrag_casts);
   ImGui::SameLine();
   ImGui::Checkbox("Objects cast shadows", &tie_casts);
+  ImGui::Checkbox("Characters cast shadows", &chars_cast);
+  ImGui::SameLine();
+  ImGui::Checkbox("Characters receive shadows", &chars_receive);
+  ImGui::Checkbox("Hide the game's blob shadow", &hide_blob_shadow);
   ImGui::Checkbox("Show shadow map", &show_map);
   ImGui::Text("Shadow draws last frame: %d, framebuffer %s", m_last_draw_calls,
               m_fbo_status == GL_FRAMEBUFFER_COMPLETE ? "ok" : "BROKEN");

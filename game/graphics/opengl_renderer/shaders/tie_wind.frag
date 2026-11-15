@@ -30,6 +30,24 @@ uniform int shadow_enabled;
 uniform float shadow_strength;
 uniform float shadow_normal_offset;  // game units
 uniform vec4 cam_trans;
+// character shadows, drawn last frame
+uniform sampler2DShadow char_shadow_tex;
+uniform mat4 char_shadow_mat;
+uniform int char_shadow_enabled;
+
+bool in_shadow_map(vec4 sc) {
+  return sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0 && sc.z <= 1.0;
+}
+
+float pcf9(sampler2DShadow t, vec3 c) {
+  float s = 0.0;
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      s += textureOffset(t, c, ivec2(x, y));
+    }
+  }
+  return s / 9.0;
+}
 
 // 1 = the sun reaches this point, 0 = in shadow
 float sun_shadow(vec3 N) {
@@ -37,21 +55,21 @@ float sun_shadow(vec3 N) {
     return 1.0;
   }
   vec3 world = view_dir + cam_trans.xyz + N * shadow_normal_offset;
+  float s = 1.0;
   vec4 sc = shadow_mat * vec4(world, 1.0);
-  if (sc.x < 0.0 || sc.x > 1.0 || sc.y < 0.0 || sc.y > 1.0 || sc.z > 1.0) {
-    return 1.0;  // outside the shadow map
+  if (in_shadow_map(sc)) {
+    // fade out at the edge of the shadow map area
+    vec2 e = min(sc.xy, 1.0 - sc.xy);
+    float edge = clamp(min(e.x, e.y) * 10.0, 0.0, 1.0);
+    s = mix(1.0, pcf9(shadow_tex, sc.xyz), edge);
   }
-  float s = 0.0;
-  for (int x = -1; x <= 1; x++) {
-    for (int y = -1; y <= 1; y++) {
-      s += textureOffset(shadow_tex, sc.xyz, ivec2(x, y));
+  if (char_shadow_enabled == 1) {
+    vec4 cc = char_shadow_mat * vec4(world, 1.0);
+    if (in_shadow_map(cc)) {
+      s = min(s, pcf9(char_shadow_tex, cc.xyz));
     }
   }
-  s /= 9.0;
-  // fade out at the edge of the shadow map area
-  vec2 e = min(sc.xy, 1.0 - sc.xy);
-  float edge = clamp(min(e.x, e.y) * 10.0, 0.0, 1.0);
-  return mix(1.0, s, shadow_strength * edge);
+  return mix(1.0, s, shadow_strength);
 }
 
 void main() {
