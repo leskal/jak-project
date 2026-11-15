@@ -64,6 +64,8 @@ bool lighting_settings_load(SSAO& ssao, SunShadow& sun, SharedRenderState::Relig
     get_if(r, "ambient", rl.ambient);
     get_if(r, "use_game_sun", rl.use_game_sun);
     get_if(r, "use_game_colors", rl.use_game_colors);
+    get_if(r, "sun_smooth_s", rl.sun_smooth_s);
+    get_if(r, "sun_jump_accept_s", rl.sun_jump_accept_s);
     if (r.contains("sun_color") && r.at("sun_color").is_array() &&
         r.at("sun_color").size() == 3) {
       for (int i = 0; i < 3; i++) {
@@ -115,7 +117,9 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"sun_color", {rl.sun_color[0], rl.sun_color[1], rl.sun_color[2]}},
                   {"ambient", rl.ambient},
                   {"use_game_sun", rl.use_game_sun},
-                  {"use_game_colors", rl.use_game_colors}};
+                  {"use_game_colors", rl.use_game_colors},
+                  {"sun_smooth_s", rl.sun_smooth_s},
+                  {"sun_jump_accept_s", rl.sun_jump_accept_s}};
   j["shadows"] = {{"enabled", sun.enabled},
                   {"resolution", sun.resolution},
                   {"half_size_m", sun.half_size_m},

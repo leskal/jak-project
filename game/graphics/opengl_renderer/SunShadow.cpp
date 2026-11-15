@@ -2,6 +2,7 @@
 
 // Sun shadows for the relighting mod. (AI-assisted)
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -185,8 +186,71 @@ void SunShadow::setup_char_targets() {
   m_char_prev_valid = false;
 }
 
+void SunShadow::update_game_sun(SharedRenderState::RelightSettings& rl) {
+  const auto now = std::chrono::steady_clock::now();
+  float dt = m_have_time ? std::chrono::duration<float>(now - m_last_time).count() : 0.f;
+  dt = std::min(std::max(dt, 0.f), 0.25f);
+  m_last_time = now;
+  m_have_time = true;
+  if (!rl.game_sun_raw_valid) {
+    return;
+  }
+
+  auto copy3 = [](float* dst, const float* src) {
+    for (int i = 0; i < 3; i++) {
+      dst[i] = src[i];
+    }
+  };
+  // move the filtered sun towards the raw one by fraction k
+  auto approach = [&](float k) {
+    float n = 0;
+    for (int i = 0; i < 3; i++) {
+      rl.game_sun_dir[i] += (rl.game_sun_raw_dir[i] - rl.game_sun_dir[i]) * k;
+      rl.game_sun_color[i] += (rl.game_sun_raw_color[i] - rl.game_sun_color[i]) * k;
+      rl.game_ambient[i] += (rl.game_raw_ambient[i] - rl.game_ambient[i]) * k;
+      n += rl.game_sun_dir[i] * rl.game_sun_dir[i];
+    }
+    n = std::sqrt(n);
+    if (n > 1e-6f) {
+      for (int i = 0; i < 3; i++) {
+        rl.game_sun_dir[i] /= n;
+      }
+    }
+  };
+
+  if (!rl.game_sun_valid) {
+    // first time: take it as it is
+    copy3(rl.game_sun_dir, rl.game_sun_raw_dir);
+    copy3(rl.game_sun_color, rl.game_sun_raw_color);
+    copy3(rl.game_ambient, rl.game_raw_ambient);
+    rl.game_sun_valid = true;
+    m_pending_time = 0;
+    return;
+  }
+
+  auto dot3 = [](const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+  const float cos_20_deg = 0.9397f;
+  if (dot3(rl.game_sun_dir, rl.game_sun_raw_dir) >= cos_20_deg) {
+    // small change (time of day): follow it smoothly
+    m_pending_time = 0;
+    approach(1.f - std::exp(-dt / std::max(rl.sun_smooth_s, 0.01f)));
+  } else {
+    // sudden jump (e.g. Jak walked indoors and the game lights him with a lamp): ignore it,
+    // unless the new light stays the same for a long time (e.g. a different level)
+    if (m_pending_time > 0 && dot3(m_pending_dir, rl.game_sun_raw_dir) < 0.98f) {
+      m_pending_time = 0;  // it keeps changing: start counting again
+    }
+    copy3(m_pending_dir, rl.game_sun_raw_dir);
+    m_pending_time += dt;
+    if (m_pending_time >= rl.sun_jump_accept_s) {
+      approach(1.f - std::exp(-dt / 3.f));  // move over to it over a few seconds
+    }
+  }
+}
+
 void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof) {
   auto& rl = render_state->relight;
+  update_game_sun(rl);
   rl.shadow_valid = false;
   rl.char_shadow_write = false;
   rl.char_shadow_valid = false;

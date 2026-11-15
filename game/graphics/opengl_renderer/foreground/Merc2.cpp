@@ -508,11 +508,11 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
     if (len > 1e-4f) {
       auto& rl = render_state->relight;
       for (int i = 0; i < 3; i++) {
-        rl.game_sun_dir[i] = d[i] / len;
-        rl.game_sun_color[i] = current_lights.color0[i];
-        rl.game_ambient[i] = current_lights.ambient[i];
+        rl.game_sun_raw_dir[i] = d[i] / len;
+        rl.game_sun_raw_color[i] = current_lights.color0[i];
+        rl.game_raw_ambient[i] = current_lights.ambient[i];
       }
-      rl.game_sun_valid = true;
+      rl.game_sun_raw_valid = true;
     }
   }
 

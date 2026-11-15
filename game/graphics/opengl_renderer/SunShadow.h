@@ -9,6 +9,7 @@
 // The geometry is taken directly from the level data the loader already put on the GPU, so this
 // does not depend on the game sending anything extra.
 
+#include <chrono>
 #include <map>
 #include <tuple>
 
@@ -47,6 +48,13 @@ class SunShadow {
  private:
   void setup_target();
   void free_target();
+
+  // filters the game's sun (see RelightSettings::game_sun_*)
+  void update_game_sun(SharedRenderState::RelightSettings& rl);
+  std::chrono::steady_clock::time_point m_last_time;
+  bool m_have_time = false;
+  float m_pending_time = 0.f;
+  float m_pending_dir[3] = {0, 1, 0};
 
   struct TreeGl {
     GLuint vao = 0;

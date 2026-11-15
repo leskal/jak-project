@@ -1209,12 +1209,17 @@ void OpenGLRenderer::draw_renderer_selection_window() {
     ImGui::Checkbox("Use the game's sun direction", &rl.use_game_sun);
     ImGui::Checkbox("Use the game's light colors", &rl.use_game_colors);
     if (rl.game_sun_valid) {
-      ImGui::Text("Game sun: dir (%.2f %.2f %.2f) color (%.2f %.2f %.2f)", rl.game_sun_dir[0],
+      ImGui::Text("Game sun used: dir (%.2f %.2f %.2f) color (%.2f %.2f %.2f)", rl.game_sun_dir[0],
                   rl.game_sun_dir[1], rl.game_sun_dir[2], rl.game_sun_color[0],
                   rl.game_sun_color[1], rl.game_sun_color[2]);
+      ImGui::Text("Game light on Jak: dir (%.2f %.2f %.2f) color (%.2f %.2f %.2f)",
+                  rl.game_sun_raw_dir[0], rl.game_sun_raw_dir[1], rl.game_sun_raw_dir[2],
+                  rl.game_sun_raw_color[0], rl.game_sun_raw_color[1], rl.game_sun_raw_color[2]);
     } else {
       ImGui::Text("Game sun: not found yet (Jak not on screen)");
     }
+    ImGui::SliderFloat("Sun smoothing (s)", &rl.sun_smooth_s, 0.f, 10.f);
+    ImGui::SliderFloat("Accept sudden sun change after (s)", &rl.sun_jump_accept_s, 1.f, 120.f);
     ImGui::SliderFloat("Sun direction (deg)", &rl.sun_azimuth_deg, 0.f, 360.f);
     ImGui::SliderFloat("Sun height (deg)", &rl.sun_elevation_deg, 0.f, 90.f);
     ImGui::SliderFloat("Sun intensity", &rl.sun_intensity, 0.f, 2.f);

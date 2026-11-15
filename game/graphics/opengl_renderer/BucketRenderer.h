@@ -76,10 +76,19 @@ struct SharedRenderState {
     // sun taken from the game (the light the game uses on Jak, see Merc2.cpp)
     bool use_game_sun = true;       // use the game's sun direction instead of the sliders
     bool use_game_colors = false;   // also use the game's sun and ambient colors
+    // what the game gave Jak last frame (raw, can jump: indoors the game uses lamp lights)
+    bool game_sun_raw_valid = false;
+    float game_sun_raw_dir[3] = {0, 1, 0};
+    float game_sun_raw_color[3] = {1, 1, 1};
+    float game_raw_ambient[3] = {0.5f, 0.5f, 0.5f};
+    // filtered version used for lighting (see SunShadow::update_game_sun):
+    // follows slow changes (time of day), ignores sudden jumps (going indoors) unless they last
     bool game_sun_valid = false;
     float game_sun_dir[3] = {0, 1, 0};
     float game_sun_color[3] = {1, 1, 1};
     float game_ambient[3] = {0.5f, 0.5f, 0.5f};
+    float sun_smooth_s = 2.f;        // how fast the sun follows slow changes (seconds)
+    float sun_jump_accept_s = 30.f;  // a sudden change is accepted only after it lasts this long
 
     // sun shadows (filled in each frame by SunShadow)
     bool shadow_valid = false;
