@@ -85,6 +85,7 @@ set(RUNTIME_SOURCE
         graphics/opengl_renderer/SkyBlendGPU.cpp
         graphics/opengl_renderer/SkyRenderer.cpp
         graphics/opengl_renderer/SlowTimeEffect.cpp
+        graphics/opengl_renderer/LightingSettings.cpp
         graphics/opengl_renderer/SSAO.cpp
         graphics/opengl_renderer/SunShadow.cpp
         graphics/opengl_renderer/sprite/GlowRenderer.cpp

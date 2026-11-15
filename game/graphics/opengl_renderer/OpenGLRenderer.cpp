@@ -8,6 +8,7 @@
 #include "game/graphics/opengl_renderer/DepthCue.h"
 #include "game/graphics/opengl_renderer/DirectRenderer.h"
 #include "game/graphics/opengl_renderer/EyeRenderer.h"
+#include "game/graphics/opengl_renderer/LightingSettings.h"
 #include "game/graphics/opengl_renderer/ProgressRenderer.h"
 #include "game/graphics/opengl_renderer/ShadowRenderer.h"
 #include "game/graphics/opengl_renderer/SkyRenderer.h"
@@ -982,6 +983,14 @@ void OpenGLRenderer::blit_display(ScopedProfilerNode& prof) {
  * Main render function. This is called from the gfx loop with the chain passed from the game.
  */
 void OpenGLRenderer::render(DmaFollower dma, const RenderOptions& settings) {
+  // (AI-assisted) lighting mod: load the saved settings once, at the first frame
+  {
+    static bool s_lighting_settings_loaded = false;
+    if (!s_lighting_settings_loaded) {
+      lighting_settings_load(m_ssao, m_sun_shadow, m_render_state.relight);
+      s_lighting_settings_loaded = true;
+    }
+  }
   m_profiler.clear();
   m_render_state.reset();
   m_render_state.ee_main_memory = g_ee_main_mem;
@@ -1167,6 +1176,25 @@ void OpenGLRenderer::draw_renderer_selection_window() {
   ImGui::Checkbox("Sky CPU", &m_render_state.use_sky_cpu);
   ImGui::Checkbox("Occlusion Cull", &m_render_state.use_occlusion_culling);
   ImGui::Checkbox("Blackout Loads", &m_enable_fast_blackout_loads);
+
+  // (AI-assisted) lighting mod: save / load all lighting settings
+  {
+    static std::string s_lighting_status;
+    if (ImGui::Button("Save lighting settings")) {
+      s_lighting_status =
+          lighting_settings_save(m_ssao, m_sun_shadow, m_render_state.relight) ? "saved" : "FAILED";
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Load")) {
+      s_lighting_status = lighting_settings_load(m_ssao, m_sun_shadow, m_render_state.relight)
+                              ? "loaded"
+                              : "no saved file";
+    }
+    if (!s_lighting_status.empty()) {
+      ImGui::SameLine();
+      ImGui::Text("%s", s_lighting_status.c_str());
+    }
+  }
 
   // (AI-assisted) SSAO mod settings
   if (ImGui::TreeNode("SSAO (ambient occlusion)")) {

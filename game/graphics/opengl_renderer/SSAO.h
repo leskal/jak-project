@@ -32,17 +32,23 @@ class SSAO {
   bool enabled = true;
   bool half_resolution = false;  // full res looks best; half res is faster
   bool blur = true;
-  float strength = 0.6f;       // 0 = no effect, 1 = full AO
-  float radius_m = 1.0f;       // sample radius in meters
-  float intensity = 1.0f;      // AO contrast
+  float strength = 0.5f;       // 0 = no effect, 1 = full AO
+  float radius_m = 0.6f;       // sample radius in meters
+  float intensity = 1.2f;      // AO contrast
   float bias_m = 0.03f;        // ignore occluders closer than this to the surface plane (meters)
   float bias_per_m = 0.012f;   // extra bias per meter of distance (hides depth precision steps)
-  float max_distance_m = 80.f; // fade the effect out towards this distance (meters)
+  float max_distance_m = 50.f; // fade the effect out towards this distance (meters)
   int debug_view = 0;          // 0 = normal, 1 = AO only, 2 = linear depth, 3 = GI only
   // bounce light (SSGI)
   bool gi_enabled = true;
-  float gi_strength = 2.5f;    // how much bounce light is added
-  float gi_radius_m = 3.0f;    // how far light bounces (meters)
+  float gi_strength = 1.0f;    // how much bounce light is added
+  float gi_radius_m = 2.0f;    // how far light bounces (meters)
+
+  // Sun aware: in reality AO only blocks sky light and bounce light is small next to direct sun.
+  // Using the sun shadow map, the effect knows where the sun hits and is weaker there.
+  bool sun_aware = true;
+  float ao_sun_protect = 0.6f;  // how much AO is removed on surfaces in direct sun (0..1)
+  float gi_sun_reduce = 0.7f;   // how much bounce light is removed in direct sun (0..1)
   // Jak 1: the effect runs right after this bucket is drawn (see buckets.h, jak1::BucketId).
   // Everything drawn after it is not darkened and does not cast AO.
   // 55 = MERC_AFTER_PRIS: Jak himself is drawn there, so this is the first bucket where he is included.

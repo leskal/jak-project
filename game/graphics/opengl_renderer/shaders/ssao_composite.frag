@@ -34,7 +34,9 @@ void main() {
     // hue of the pixel and normalizing its brightness. Bounce light is tinted by it.
     vec3 c = texture(color_tex, tex_coord).rgb;
     float m = max(max(c.r, c.g), c.b);
-    vec3 surface = c / max(m, 0.2) * 0.8;
+    vec3 surface = c / max(m, 0.35) * 0.8;
+    // keep the bounce light's color milder (real bounce light is less saturated than the surface)
+    surface = mix(vec3(dot(surface, vec3(0.333))), surface, 0.6);
     out_add = vec4(surface * gi, 0.0);
   }
 }

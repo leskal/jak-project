@@ -33,7 +33,7 @@ class SunShadow {
   int resolution = 4096;       // shadow map size in pixels
   float half_size_m = 60.f;    // the shadow map covers this many meters around the camera
   float depth_range_m = 400.f; // how far along the sun direction things can cast shadows
-  float strength = 0.85f;      // 0 = no shadows, 1 = full shadows
+  float strength = 0.6f;       // 0 = no shadows, 1 = full shadows
   float normal_offset_m = 0.05f;  // pushes the lookup off the surface to avoid "acne"
   bool tfrag_casts = true;     // ground/walls cast shadows
   bool tie_casts = true;       // objects cast shadows

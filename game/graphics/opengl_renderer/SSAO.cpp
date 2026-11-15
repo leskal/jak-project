@@ -16,7 +16,7 @@ namespace {
 // bucket renderers that run after us see exactly what they expect.
 struct GlStateSaver {
   GLint fbo, read_fbo, draw_fbo, program, vao, array_buffer, active_tex;
-  GLint tex0, tex1, tex2;
+  GLint tex0, tex1, tex2, tex3;
   GLint viewport[4];
   GLboolean blend, depth_test, scissor, stencil, depth_mask;
   GLboolean color_mask[4];
@@ -37,6 +37,8 @@ struct GlStateSaver {
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex1);
     glActiveTexture(GL_TEXTURE2);
     glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex2);
+    glActiveTexture(GL_TEXTURE3);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &tex3);
     glGetIntegerv(GL_VIEWPORT, viewport);
     blend = glIsEnabled(GL_BLEND);
     depth_test = glIsEnabled(GL_DEPTH_TEST);
@@ -60,6 +62,8 @@ struct GlStateSaver {
     glUseProgram(program);
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, array_buffer);
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_2D, tex3);
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, tex2);
     glActiveTexture(GL_TEXTURE1);
@@ -308,6 +312,47 @@ void SSAO::render(SharedRenderState* render_state, ScopedProfilerNode& prof, int
     glUniform1i(glGetUniformLocation(id, "color_tex"), 1);
     glUniform1i(glGetUniformLocation(id, "gi_enabled"), gi_enabled ? 1 : 0);
     glUniform1f(glGetUniformLocation(id, "gi_radius"), gi_radius_m);
+
+    // sun aware: rebuild world positions exactly like the level renderers' projection
+    // (see make_new_cam_mat in background_common.cpp) and look them up in the sun shadow map
+    const auto& rl = render_state->relight;
+    const bool sun_on = sun_aware && rl.shadow_valid && render_state->has_pc_data;
+    glUniform1i(glGetUniformLocation(id, "shadow_tex"), 3);
+    glUniform1i(glGetUniformLocation(id, "sun_aware"), sun_on ? 1 : 0);
+    if (sun_on) {
+      float cam_rot[9];
+      for (int c = 0; c < 3; c++) {
+        for (int r = 0; r < 3; r++) {
+          cam_rot[c * 3 + r] = render_state->camera_rot[c][r];
+        }
+      }
+      glUniformMatrix3fv(glGetUniformLocation(id, "cam_rot"), 1, GL_FALSE, cam_rot);
+      glUniform3f(glGetUniformLocation(id, "cam_trans"), render_state->camera_pos.x(),
+                  render_state->camera_pos.y(), render_state->camera_pos.z());
+      glUniform4f(glGetUniformLocation(id, "cam_params"), depth_k, depth_a, pc_pxx,
+                  pc_pyy * y_adjust);
+      glUniform1f(glGetUniformLocation(id, "cam_pzw"), pzw);
+      glUniformMatrix4fv(glGetUniformLocation(id, "shadow_mat"), 1, GL_FALSE, rl.shadow_mat);
+      glUniform1f(glGetUniformLocation(id, "shadow_normal_offset"), rl.shadow_normal_offset);
+      float L[3];
+      if (rl.use_game_sun && rl.game_sun_valid) {
+        for (int i = 0; i < 3; i++) {
+          L[i] = rl.game_sun_dir[i];
+        }
+      } else {
+        const float az = rl.sun_azimuth_deg * 3.14159265f / 180.f;
+        const float el = rl.sun_elevation_deg * 3.14159265f / 180.f;
+        L[0] = std::cos(el) * std::sin(az);
+        L[1] = std::sin(el);
+        L[2] = std::cos(el) * std::cos(az);
+      }
+      glUniform3f(glGetUniformLocation(id, "sun_dir"), L[0], L[1], L[2]);
+      glUniform1f(glGetUniformLocation(id, "ao_sun_protect"), ao_sun_protect);
+      glUniform1f(glGetUniformLocation(id, "gi_sun_reduce"), gi_sun_reduce);
+      glActiveTexture(GL_TEXTURE3);
+      glBindTexture(GL_TEXTURE_2D, rl.shadow_tex);
+      glActiveTexture(GL_TEXTURE0);
+    }
     draw_quad();
     prof.add_draw_call();
     prof.add_tri(2);
@@ -395,6 +440,9 @@ void SSAO::draw_debug_window() {
   ImGui::Checkbox("Bounce light (GI)", &gi_enabled);
   ImGui::SliderFloat("GI strength", &gi_strength, 0.f, 10.f);
   ImGui::SliderFloat("GI radius (m)", &gi_radius_m, 0.5f, 10.f);
+  ImGui::Checkbox("Sun aware (needs Relighting + Sun shadows)", &sun_aware);
+  ImGui::SliderFloat("Less AO in sun", &ao_sun_protect, 0.f, 1.f);
+  ImGui::SliderFloat("Less GI in sun", &gi_sun_reduce, 0.f, 1.f);
   ImGui::Separator();
   ImGui::RadioButton("Normal", &debug_view, 0);
   ImGui::SameLine();

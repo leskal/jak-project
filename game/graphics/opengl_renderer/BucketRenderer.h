@@ -70,7 +70,7 @@ struct SharedRenderState {
     float sun_elevation_deg = 50.f; // height of the sun above the horizon
     float sun_intensity = 0.8f;
     float sun_color[3] = {1.f, 0.95f, 0.85f};
-    float ambient = 0.55f;          // light that comes from everywhere (sky)
+    float ambient = 0.6f;           // light that comes from everywhere (sky)
     int debug = 0;                  // 1 = show normals as colors
 
     // sun taken from the game (the light the game uses on Jak, see Merc2.cpp)

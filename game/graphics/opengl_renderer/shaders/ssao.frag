@@ -22,6 +22,57 @@ uniform sampler2D color_tex; // the image before AO, source of bounce light colo
 uniform int gi_enabled;
 uniform float gi_radius;     // meters
 
+// sun aware (AI-assisted): where does the sun hit directly?
+uniform int sun_aware;
+uniform sampler2DShadow shadow_tex;
+uniform mat4 shadow_mat;
+uniform mat3 cam_rot;        // camera space = cam_rot * (world - cam_trans)
+uniform vec3 cam_trans;
+uniform vec4 cam_params;     // x = depth k, y = depth a, z = x scale, w = y scale (signed)
+uniform float cam_pzw;
+uniform float shadow_normal_offset;
+uniform vec3 sun_dir;
+uniform float ao_sun_protect;
+uniform float gi_sun_reduce;
+
+vec3 world_pos(vec2 uv) {
+  float ndc_z = texture(depth_tex, uv).r * 2.0 - 1.0;
+  float W = cam_params.x / (cam_params.y - ndc_z);
+  vec2 ndc = uv * 2.0 - 1.0;
+  vec3 c = vec3(-ndc.x * W / cam_params.z, -ndc.y * W / cam_params.w, -W / cam_pzw);
+  return transpose(cam_rot) * c + cam_trans;
+}
+
+vec3 pick_w(vec3 c, vec3 a, vec3 b) {
+  return length(a - c) < length(b - c) ? a - c : c - b;
+}
+
+// 0 = not in direct sun, 1 = fully in direct sun
+float direct_sun(vec2 uv) {
+  vec3 wp = world_pos(uv);
+  vec3 wx = pick_w(wp, world_pos(uv + vec2(depth_texel.x, 0)), world_pos(uv - vec2(depth_texel.x, 0)));
+  vec3 wy = pick_w(wp, world_pos(uv + vec2(0, depth_texel.y)), world_pos(uv - vec2(0, depth_texel.y)));
+  vec3 wn = cross(wx, wy);
+  float l = length(wn);
+  if (l < 1e-8) {
+    return 0.0;
+  }
+  wn /= l;
+  if (dot(wn, wp - cam_trans) > 0.0) {
+    wn = -wn;  // face the camera
+  }
+  float ndl = max(dot(wn, sun_dir), 0.0);
+  if (ndl <= 0.0) {
+    return 0.0;
+  }
+  vec4 sc = shadow_mat * vec4(wp + wn * shadow_normal_offset, 1.0);
+  float vis = 1.0;
+  if (sc.x >= 0.0 && sc.x <= 1.0 && sc.y >= 0.0 && sc.y <= 1.0 && sc.z <= 1.0) {
+    vis = texture(shadow_tex, sc.xyz);
+  }
+  return ndl * vis;
+}
+
 const int NUM_SAMPLES = 16;
 const float NUM_TURNS = 7.0;
 const int GI_SAMPLES = 16;
@@ -141,6 +192,13 @@ void main() {
     }
     gi *= 2.0 / float(GI_SAMPLES);
     gi *= fade;
+  }
+
+  // sun aware: AO only darkens light from the sky, and bounce light matters less in direct sun
+  if (sun_aware == 1) {
+    float sunlit = direct_sun(uv0);
+    out_color.r = mix(out_color.r, 1.0, sunlit * ao_sun_protect);
+    gi *= mix(1.0, 1.0 - gi_sun_reduce, sunlit);
   }
   out_gi = vec4(gi, 1.0);
 }
