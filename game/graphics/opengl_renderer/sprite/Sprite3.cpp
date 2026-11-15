@@ -515,6 +515,11 @@ void Sprite3::render_jak1(DmaFollower& dma,
     render_distorter(dma, render_state, child);
   }
 
+  // (AI-assisted) glow light mod: image before the particles
+  if (render_state->sprite_hook) {
+    render_state->sprite_hook(0);
+  }
+
   // next, sprite frame setup.
   handle_sprite_frame_setup(dma, render_state->version, render_state, prof);
 
@@ -527,6 +532,11 @@ void Sprite3::render_jak1(DmaFollower& dma,
     auto child = prof.make_scoped_child("2d-group0");
     render_2d_group0(dma, render_state, child);
     flush_sprites(render_state, prof, false);
+  }
+
+  // (AI-assisted) glow light mod: particles are done, light the surroundings (before the HUD)
+  if (render_state->sprite_hook) {
+    render_state->sprite_hook(1);
   }
 
   // shadow draw

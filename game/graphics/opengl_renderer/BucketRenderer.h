@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -62,6 +63,9 @@ struct SharedRenderState {
   math::Vector4f camera_persp[4];
   // camera rotation (camera space = rot * (world - camera_pos)), for the relighting mod
   math::Vector4f camera_rot[4];
+  // (AI-assisted) glow light mod: called by the sprite renderer with 0 just before the particles
+  // and 1 right after them (before the HUD)
+  std::function<void(int)> sprite_hook;
 
   // (AI-assisted) relighting mod: real sun lighting on level geometry
   struct RelightSettings {

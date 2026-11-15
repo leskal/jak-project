@@ -987,9 +987,10 @@ void OpenGLRenderer::render(DmaFollower dma, const RenderOptions& settings) {
   {
     static bool s_lighting_settings_loaded = false;
     if (!s_lighting_settings_loaded) {
-      lighting_settings_load(m_ssao, m_sun_shadow, m_render_state.relight);
+      lighting_settings_load(m_ssao, m_sun_shadow, m_glow_light, m_render_state.relight);
       s_lighting_settings_loaded = true;
     }
+    m_render_state.sprite_hook = [this](int stage) { m_glow_light.stage(stage, &m_render_state); };
   }
   m_profiler.clear();
   m_render_state.reset();
@@ -1182,11 +1183,14 @@ void OpenGLRenderer::draw_renderer_selection_window() {
     static std::string s_lighting_status;
     if (ImGui::Button("Save lighting settings")) {
       s_lighting_status =
-          lighting_settings_save(m_ssao, m_sun_shadow, m_render_state.relight) ? "saved" : "FAILED";
+          lighting_settings_save(m_ssao, m_sun_shadow, m_glow_light, m_render_state.relight)
+              ? "saved"
+              : "FAILED";
     }
     ImGui::SameLine();
     if (ImGui::Button("Load")) {
-      s_lighting_status = lighting_settings_load(m_ssao, m_sun_shadow, m_render_state.relight)
+      s_lighting_status = lighting_settings_load(m_ssao, m_sun_shadow, m_glow_light,
+                                                 m_render_state.relight)
                               ? "loaded"
                               : "no saved file";
     }
@@ -1199,6 +1203,12 @@ void OpenGLRenderer::draw_renderer_selection_window() {
   // (AI-assisted) SSAO mod settings
   if (ImGui::TreeNode("SSAO (ambient occlusion)")) {
     m_ssao.draw_debug_window();
+    ImGui::TreePop();
+  }
+
+  // (AI-assisted) glow light mod settings
+  if (ImGui::TreeNode("Glow light (light from glowing things)")) {
+    m_glow_light.draw_debug_window();
     ImGui::TreePop();
   }
 

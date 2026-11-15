@@ -23,7 +23,10 @@ std::string lighting_settings_path() {
   return (file_util::get_user_config_dir() / "lighting_mod.json").string();
 }
 
-bool lighting_settings_load(SSAO& ssao, SunShadow& sun, SharedRenderState::RelightSettings& rl) {
+bool lighting_settings_load(SSAO& ssao,
+                            SunShadow& sun,
+                            GlowLight& glow,
+                            SharedRenderState::RelightSettings& rl) {
   const auto path = lighting_settings_path();
   if (!file_util::file_exists(path)) {
     lg::info("lighting settings: no file at {}, using defaults", path);
@@ -86,12 +89,22 @@ bool lighting_settings_load(SSAO& ssao, SunShadow& sun, SharedRenderState::Relig
     get_if(s, "chars_receive", sun.chars_receive);
     get_if(s, "hide_blob_shadow", sun.hide_blob_shadow);
   }
+  if (j.contains("glow")) {
+    const auto& g = j.at("glow");
+    get_if(g, "enabled", glow.enabled);
+    get_if(g, "strength", glow.strength);
+    get_if(g, "radius_m", glow.radius_m);
+    get_if(g, "particle_gain", glow.particle_gain);
+    get_if(g, "bright_surface_gain", glow.bright_surface_gain);
+    get_if(g, "bright_threshold", glow.bright_threshold);
+  }
   lg::info("lighting settings: loaded {}", path);
   return true;
 }
 
 bool lighting_settings_save(const SSAO& ssao,
                             const SunShadow& sun,
+                            const GlowLight& glow,
                             const SharedRenderState::RelightSettings& rl) {
   json j;
   j["ssao"] = {{"enabled", ssao.enabled},
@@ -130,6 +143,12 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"chars_cast", sun.chars_cast},
                   {"chars_receive", sun.chars_receive},
                   {"hide_blob_shadow", sun.hide_blob_shadow}};
+  j["glow"] = {{"enabled", glow.enabled},
+               {"strength", glow.strength},
+               {"radius_m", glow.radius_m},
+               {"particle_gain", glow.particle_gain},
+               {"bright_surface_gain", glow.bright_surface_gain},
+               {"bright_threshold", glow.bright_threshold}};
   const auto path = lighting_settings_path();
   try {
     file_util::create_dir_if_needed_for_file(path);

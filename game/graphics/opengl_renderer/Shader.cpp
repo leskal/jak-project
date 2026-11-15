@@ -142,6 +142,9 @@ ShaderLibrary::ShaderLibrary(GameVersion version) {
   at(ShaderId::SUN_SHADOW) = {"sun_shadow", version};
   at(ShaderId::SUN_SHADOW_DEBUG) = {"sun_shadow_debug", version};
   at(ShaderId::MERC_SHADOW) = {"merc_shadow", version};
+  at(ShaderId::LIGHTGLOW_EMIT) = {"lightglow_emit", version};
+  at(ShaderId::LIGHTGLOW_GATHER) = {"lightglow_gather", version};
+  at(ShaderId::LIGHTGLOW_APPLY) = {"lightglow_apply", version};
 
   for (auto& shader : m_shaders) {
     ASSERT_MSG(shader.okay(), "error compiling shader");

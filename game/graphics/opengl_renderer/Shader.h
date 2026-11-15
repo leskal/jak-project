@@ -75,6 +75,9 @@ enum class ShaderId {
   SUN_SHADOW = 48,      // (AI-assisted) relighting mod sun shadows
   SUN_SHADOW_DEBUG = 49,
   MERC_SHADOW = 50,
+  LIGHTGLOW_EMIT = 51,
+  LIGHTGLOW_GATHER = 52,
+  LIGHTGLOW_APPLY = 53,
   MAX_SHADERS
 };
 
