@@ -101,7 +101,7 @@ struct SharedRenderState {
     float ground_color[3] = {0.35f, 0.30f, 0.24f};
     float exposure = 1.0f;
     float keep_painted = 0.35f;     // how much of the game's painted shading to keep (0..1)
-    float ground_smooth = 0.6f;     // (AI-assisted) hide triangle patches on ground under a low sun
+    float ground_smooth = 1.0f;     // (AI-assisted) hide triangle patches on ground under a low sun
 
     // sun taken from the game (the light the game uses on Jak, see Merc2.cpp)
     bool use_game_sun = true;       // use the game's sun direction instead of the sliders
