@@ -288,11 +288,19 @@ void Loader::loader_thread() {
           "------------> Load from file: {:.3f}s, import {:.3f}s, decomp {:.3f}s unpack {:.3f}s\n",
           disk_load_time, import_time, decomp_time, unpack_timer.getSeconds());
 
+      // (AI-assisted) lighting mod: find the level's glowing surfaces (fires, lava, lamps) here on
+      // the loader thread, so the game doesn't stutter
+      Timer surface_timer;
+      auto surface_lights = find_surface_lights(*result);
+      fmt::print("------------> {}: {} glowing surface lights ({:.1f} ms)\n", result->level_name,
+                 surface_lights.size(), surface_timer.getMs());
+
       // grab the lock again
       lk.lock();
       // move this level to "initializing" state.
       m_initializing_tfrag3_levels[lev] = std::make_unique<LevelData>();  // reset load state
       m_initializing_tfrag3_levels[lev]->level = std::move(result);
+      m_initializing_tfrag3_levels[lev]->surface_lights = std::move(surface_lights);
       m_level_to_load = "";
       m_file_load_done_cv.notify_all();
     }

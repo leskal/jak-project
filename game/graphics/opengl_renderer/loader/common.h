@@ -4,6 +4,7 @@
 #include "common/custom_data/Tfrag3Data.h"
 #include "common/util/Timer.h"
 
+#include "game/graphics/opengl_renderer/lighting_mod/SurfaceLights.h"
 #include "game/graphics/texture/TexturePool.h"
 
 #include "third-party/glad/include/glad/glad.h"
@@ -32,6 +33,9 @@ struct LevelData {
   GLuint hfrag_indices;
 
   int frames_since_last_used = 0;
+
+  // (AI-assisted) lights from glowing level surfaces (fires, lava, lamps), found at load
+  std::vector<SurfaceLight> surface_lights;
 };
 
 struct MercRef {

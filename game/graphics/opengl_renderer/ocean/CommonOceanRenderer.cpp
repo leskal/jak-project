@@ -1,6 +1,6 @@
 #include "CommonOceanRenderer.h"
 
-#include "game/graphics/opengl_renderer/WaterWaves.h"
+#include "game/graphics/opengl_renderer/lighting_mod/WaterWaves.h"
 
 #include "common/log/log.h"
 

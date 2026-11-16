@@ -220,6 +220,8 @@ void SSAO::draw_quad() {
 }
 
 void SSAO::render(SharedRenderState* render_state, ScopedProfilerNode& prof, int msaa) {
+  // (AI-assisted) the depth copy is shared with the water (clear water, shore foam)
+  render_state->relight.scene_depth_valid = false;
   if (!enabled) {
     return;
   }
@@ -281,6 +283,8 @@ void SSAO::render(SharedRenderState* render_state, ScopedProfilerNode& prof, int
     glBindFramebuffer(GL_READ_FRAMEBUFFER, render_state->render_fb);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_depth_fbo);
     glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    render_state->relight.scene_depth_tex = m_depth_tex;
+    render_state->relight.scene_depth_valid = true;
     // and the colors, for bounce light (this also resolves MSAA)
     if (gi_enabled) {
       glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_color_fbo);

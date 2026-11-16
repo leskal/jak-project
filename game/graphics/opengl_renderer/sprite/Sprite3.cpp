@@ -803,7 +803,11 @@ bool Sprite3::is_water_ring_texture(u32 sprite_idx, SharedRenderState* render_st
     const std::string tex_name = render_state->texture_pool->get_debug_texture_name_from_tbp(tbp);
     const size_t slash = tex_name.rfind('/');
     const std::string base = slash == std::string::npos ? tex_name : tex_name.substr(slash + 1);
-    const bool water = base == "water-ring" || base == "water-wave";
+    // (AI-assisted) every water particle: ripple rings and wave lines (effects/water-ring,
+    // water-wave), splashes and drops (water-splash, lakedrop, ...) and bubbles
+    const bool water = base.rfind("water-", 0) == 0 || base.find("splash") != std::string::npos ||
+                       base.find("lakedrop") != std::string::npos ||
+                       base.find("bubble") != std::string::npos;
     it = m_flat_tex_class.emplace(tbp, water ? 1 : 0).first;
   }
   return it->second == 1;
@@ -821,11 +825,11 @@ void Sprite3::do_block_common(SpriteMode mode,
 
     // (AI-assisted) point lights mod: additive ("glowing") particles are light sources.
     // Recorded before the off-screen culling below, so lights near the edge don't pop.
-    // Camera-facing and flat ("3D") particles both count, except the game's water ripple rings
-    // and wave lines (flat particles on the water), which shouldn't light anything.
+    // Camera-facing and flat ("3D") particles both count, except the game's water particles
+    // (ripple rings, wave lines, splashes, drops, bubbles), which shouldn't light anything.
     if (mode != ModeHUD && render_state->collect_particle_lights &&
         render_state->particle_light_samples.size() < 8192 &&
-        !(mode == Mode3D && is_water_ring_texture(sprite_idx, render_state))) {
+        !is_water_ring_texture(sprite_idx, render_state)) {
       GsAlpha reg(m_adgif[sprite_idx].alpha_data);
       const bool additive = reg.a_mode() == GsAlpha::BlendMode::SOURCE &&
                             reg.b_mode() == GsAlpha::BlendMode::ZERO_OR_FIXED &&
@@ -841,7 +845,13 @@ void Sprite3::do_block_common(SpriteMode mode,
                             : 1.f;
         const float size_m = std::max(std::abs(v.xyz_sx.w()), std::abs(v.sy())) / 4096.f;
         const float w = a * std::min(size_m * size_m, 4.f);
-        if (w > 0.f && (r + g + b) > 0.f) {
+        // (AI-assisted) pale blue-white glowing particles are water spray (the village fountain
+        // uses the same middot / bigpuff textures as sparks and eco): no light. Fire is warm and
+        // eco is strongly coloured, so they still count.
+        const float mx = std::max(r, std::max(g, b));
+        const float mn = std::min(r, std::min(g, b));
+        const bool water_spray = mx > 0.f && b >= r * 1.15f && (mx - mn) / mx < 0.55f;
+        if (w > 0.f && (r + g + b) > 0.f && !water_spray) {
           render_state->particle_light_samples.push_back(
               {v.xyz_sx.x(), v.xyz_sx.y(), v.xyz_sx.z(), {r * w, g * w, b * w}});
         }

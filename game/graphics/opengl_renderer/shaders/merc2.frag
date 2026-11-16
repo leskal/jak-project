@@ -71,6 +71,11 @@ uniform float water_reflect;
 uniform float water_spec;
 uniform vec3 cam_trans_m;
 uniform vec4 viewport;  // x, y, width, height
+// (AI-assisted) clear shallow water: the depth of the scene before the water was drawn
+uniform sampler2D scene_depth;
+uniform int scene_depth_on;
+uniform float clear_depth_m;   // 0 = off
+uniform vec4 cam_params;       // x = depth k, y = depth a (W = k / (a - ndc_z))
 #define water_viewport_h viewport.w
 
 // ---- (AI-assisted) water waves ----
@@ -425,6 +430,20 @@ void main() {
     vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
     color.rgb = water_shade(color.rgb, N, V, fog_color.rgb * 1.1);
     color.rgb += fog_color.rgb * clamp(wake.x * 5.0, 0.0, 0.3);  // light line on wake crests
+
+    // (AI-assisted) clear water: how far the view goes through the water to the ground below
+    // decides how much of the game's water colour covers it. Clear at the edge, the game's own
+    // colour where deep; a little surface sheen stays everywhere.
+    if (scene_depth_on == 1 && clear_depth_m > 0.0) {
+      float d = texelFetch(scene_depth, ivec2(gl_FragCoord.xy), 0).r;
+      float Wb = abs(cam_params.x / (cam_params.y - (2.0 * d - 1.0)));
+      float Ws = abs(cam_params.x / (cam_params.y - (2.0 * gl_FragCoord.z - 1.0)));
+      float ray_m = max(Wb - Ws, 0.0) * (length(merc_world - cam_trans_m) / max(Ws, 1e-3)) / 4096.0;
+      if (d >= 0.99999) {
+        ray_m = 1000.0;  // nothing behind: deep
+      }
+      color.a *= mix(0.12, 1.0, 1.0 - exp(-ray_m / clear_depth_m));
+    }
   }
 
   if (relight_debug == 2 && shadow_enabled == 1) {

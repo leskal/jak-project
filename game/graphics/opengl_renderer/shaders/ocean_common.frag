@@ -28,6 +28,12 @@ uniform float water_reflect;
 uniform float water_spec;
 uniform vec3 sun_dir;
 uniform vec3 sun_color;
+// (AI-assisted) clear shallows and shore foam: the depth of the scene before the water was drawn
+uniform sampler2D scene_depth;
+uniform int scene_depth_on;
+uniform float clear_depth_m;   // 0 = off
+uniform float foam_strength;   // 0 = off
+uniform float shallow_tint;
 
 // ---- (AI-assisted) water waves ----
 // a few long waves (they move the ocean surface) and short ripples (only change the lighting).
@@ -206,6 +212,53 @@ vec3 ocean_waves(vec3 base) {
   return col;
 }
 
+// (AI-assisted) world position of the ground behind this pixel (from the scene depth)
+vec3 scene_world(out bool sky) {
+  float d = texelFetch(scene_depth, ivec2(gl_FragCoord.xy), 0).r;
+  sky = d >= 0.99999;
+  vec2 ndc_xy = (gl_FragCoord.xy - viewport.xy) / viewport.zw * 2.0 - 1.0;
+  float W = cam_params.x / (cam_params.y - (2.0 * d - 1.0));
+  vec3 c = vec3(-ndc_xy.x * W / cam_params.z, -ndc_xy.y * W / cam_params.w, -W / cam_pzw);
+  return transpose(cam_rot) * c + cam_trans;
+}
+
+// (AI-assisted) the sea near the shore: see-through and lighter where shallow, foam at the edge
+void ocean_shore(inout vec4 col) {
+  bool sky;
+  vec3 bed = scene_world(sky);
+  if (sky) {
+    return;
+  }
+  vec3 wp = frag_world();
+  float depth_m = (wp.y - bed.y) / 4096.0;             // water depth under this point
+  float ray_m = length(bed - wp) / 4096.0;             // view ray through the water
+  float dist_m = length(wp - cam_trans) / 4096.0;
+  float near = 1.0 - smoothstep(40.0, 80.0, dist_m);   // far shores: no contour lines
+  if (depth_m < -0.5) {
+    return;  // ground in front of the water (seen through a gap): leave it
+  }
+  // lighter, greener water over shallow ground
+  float sh = exp(-max(depth_m, 0.0) / 1.5) * shallow_tint * near;
+  col.rgb = mix(col.rgb, col.rgb * vec3(1.05, 1.3, 1.2) + vec3(0.02, 0.05, 0.05), sh);
+  // see-through where shallow
+  if (clear_depth_m > 0.0) {
+    col.a *= mix(1.0, mix(0.2, 1.0, 1.0 - exp(-ray_m / (clear_depth_m * 1.5))), near);
+  }
+  // foam: a band where the water gets shallow, broken up by moving noise; the waves move the
+  // surface up and down, so the foam laps back and forth
+  if (foam_strength > 0.0) {
+    vec2 p = wp.xz / 4096.0;
+    float n = rip_noise(p * 1.7 + vec2(wave_time * 0.11, wave_time * 0.05)).x +
+              0.5 * rip_noise(p * 4.3 - vec2(wave_time * 0.17, -wave_time * 0.09)).x;
+    float band = 1.0 - smoothstep(0.0, 0.45, depth_m);
+    float edge = smoothstep(0.35, 0.75, band + n * 0.6);
+    float foam = edge * band * near * foam_strength;
+    vec3 foam_col = fog_color.rgb * 0.6 + sun_color * 0.25 + vec3(0.25);
+    col.rgb = mix(col.rgb, foam_col, clamp(foam, 0.0, 0.9));
+    col.a = max(col.a, clamp(foam, 0.0, 0.9));
+  }
+}
+
 void main() {
   vec4 T0 = texture(tex_T0, tex_coord.xy / tex_coord.z);
   if (bucket == 0) {
@@ -213,6 +266,9 @@ void main() {
     color.a = fragment_color.a;
     if (waves_on == 1) {
       color.rgb = ocean_waves(color.rgb);
+      if (scene_depth_on == 1) {
+        ocean_shore(color);
+      }
     }
     color.rgb = mix(color.rgb, fog_color.rgb, clamp(fog_color.a * fog, 0, 1));
   } else if (bucket == 1 || bucket == 2 || bucket == 4) {

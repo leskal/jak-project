@@ -47,6 +47,56 @@ void PointLights::update(SharedRenderState* render_state) {
     return;
   }
 
+  // (AI-assisted) lights from glowing level surfaces (fires, lava, lamps), found when the level
+  // loaded (SurfaceLights). Brightness = baked colour of each effect slot x the game's current
+  // weight of that slot, so they flicker / pulse with the game. They join the particle lights.
+  m_last_surface = 0;
+  if (surface_lights && surface_strength > 0.f && render_state->loader) {
+    const float cx = render_state->camera_pos.x(), cy = render_state->camera_pos.y(),
+                cz = render_state->camera_pos.z();
+    const float near_d = 60.f * kMeter;
+    for (auto* lev : render_state->loader->get_in_use_levels()) {
+      if (!lev || !lev->level || lev->surface_lights.empty()) {
+        continue;
+      }
+      auto it = render_state->level_itimes.find(lev->level->level_name);
+      if (it == render_state->level_itimes.end()) {
+        continue;
+      }
+      // slot weights, 64 = 1.0 (same unpacking as interp_time_of_day)
+      float w[8][3];
+      for (int s = 0; s < 8; s++) {
+        for (int ch = 0; ch < 3; ch++) {
+          const u32 word = (u32)it->second[(s / 2) * 4 + (s % 2) * 2 + ch / 2];
+          w[s][ch] = (float)((ch % 2 ? (word >> 16) : word) & 0xff) / 64.f;
+        }
+      }
+      for (const auto& L : lev->surface_lights) {
+        const float dx = L.pos[0] - cx, dy = L.pos[1] - cy, dz = L.pos[2] - cz;
+        if (dx * dx + dy * dy + dz * dz > near_d * near_d) {
+          continue;
+        }
+        SharedRenderState::ParticleLightSample s;
+        s.x = L.pos[0];
+        s.y = L.pos[1];
+        s.z = L.pos[2];
+        float mx = 0;
+        for (int ch = 0; ch < 3; ch++) {
+          float c = 0;
+          for (int sl = 0; sl < 8; sl++) {
+            c += w[sl][ch] * L.color[sl][ch];
+          }
+          s.color[ch] = c * surface_strength;
+          mx = std::max(mx, s.color[ch]);
+        }
+        if (mx > 0.002f) {
+          samples.push_back(s);
+          m_last_surface++;
+        }
+      }
+    }
+  }
+
   // ---- 1. group last frame's glowing particles into clusters (grid cells) ----
   m_last_samples = (int)samples.size();
   const float cell = std::max(cluster_size_m, 0.1f) * kMeter;
@@ -235,6 +285,9 @@ void PointLights::draw_debug_window() {
   ImGui::SliderFloat("Max light reach (m)", &max_radius_m, 1.f, 30.f);
   ImGui::SliderInt("Max lights", &max_lights, 1, 16);
   ImGui::SliderFloat("Fire flicker", &flicker, 0.f, 1.f);
+  ImGui::Checkbox("Light from glowing surfaces (fires, lava, lamps)", &surface_lights);
+  ImGui::SliderFloat("Glowing surface strength", &surface_strength, 0.f, 2.f);
+  ImGui::Text("  glowing surface lights nearby: %d", m_last_surface);
   ImGui::Checkbox("Jak casts shadows from these lights", &jak_shadows);
   ImGui::Text("  Jak: %d spheres, last seen %d frames ago, %.2f m around his middle", m_occ_count,
               m_occ_age, m_occ_size_m);

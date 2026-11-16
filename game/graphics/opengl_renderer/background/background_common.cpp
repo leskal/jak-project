@@ -2,7 +2,7 @@
 
 #include "background_common.h"
 
-#include "game/graphics/opengl_renderer/SunModel.h"
+#include "game/graphics/opengl_renderer/lighting_mod/SunModel.h"
 
 #include <cmath>
 

@@ -23,7 +23,7 @@ All commands from the repository folder, in the x64 Native Tools Command Prompt.
 
 2. Make the ZIP (pick the new version number):
 
-       powershell -ExecutionPolicy Bypass -File scripts\lighting_mod\make_release.ps1 -Version v0.1.0
+       powershell -ExecutionPolicy Bypass -File lighting_mod\scripts\make_release.ps1 -Version v0.1.0
 
    It writes `out\lighting-mod\windows-jak1-realistic-lighting-v0.1.0.zip` and `out\lighting-mod\metadata.json`.
 
@@ -32,7 +32,7 @@ All commands from the repository folder, in the x64 Native Tools Command Prompt.
 
 4. Add the version to the mod source and push it:
 
-       powershell -ExecutionPolicy Bypass -File scripts\lighting_mod\mod_source.ps1 -Add v0.1.0
+       powershell -ExecutionPolicy Bypass -File lighting_mod\scripts\mod_source.ps1 -Add v0.1.0
        git add mods.json
        git commit -m "Lighting mod: mod source v0.1.0 (AI-assisted)"
        git push myfork gi-mod

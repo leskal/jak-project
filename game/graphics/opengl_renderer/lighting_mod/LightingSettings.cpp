@@ -81,6 +81,11 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "water_spec", rl.water_spec);
     get_if(r, "water_wakes", rl.water_wakes);
     get_if(r, "wake_strength", rl.wake_strength);
+    get_if(r, "clear_water", rl.clear_water);
+    get_if(r, "clear_water_depth_m", rl.clear_water_depth_m);
+    get_if(r, "shore_foam", rl.shore_foam);
+    get_if(r, "foam_strength", rl.foam_strength);
+    get_if(r, "shallow_tint", rl.shallow_tint);
     get_if(r, "auto_exposure_amount", rl.auto_exposure_amount);
     get_if(r, "auto_exposure_target", rl.auto_exposure_target);
     get_if(r, "auto_exposure_speed_s", rl.auto_exposure_speed_s);
@@ -141,6 +146,8 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(p, "max_lights", lights.max_lights);
     get_if(p, "flicker", lights.flicker);
     get_if(p, "jak_shadows", lights.jak_shadows);
+    get_if(p, "surface_lights", lights.surface_lights);
+    get_if(p, "surface_strength", lights.surface_strength);
   }
   lg::info("lighting settings: loaded {}", path);
   return true;
@@ -190,6 +197,11 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"water_spec", rl.water_spec},
                   {"water_wakes", rl.water_wakes},
                   {"wake_strength", rl.wake_strength},
+                  {"clear_water", rl.clear_water},
+                  {"clear_water_depth_m", rl.clear_water_depth_m},
+                  {"shore_foam", rl.shore_foam},
+                  {"foam_strength", rl.foam_strength},
+                  {"shallow_tint", rl.shallow_tint},
                   {"auto_exposure_amount", rl.auto_exposure_amount},
                   {"auto_exposure_target", rl.auto_exposure_target},
                   {"auto_exposure_speed_s", rl.auto_exposure_speed_s},
@@ -227,7 +239,9 @@ bool lighting_settings_save(const SSAO& ssao,
                        {"max_radius_m", lights.max_radius_m},
                        {"max_lights", lights.max_lights},
                        {"flicker", lights.flicker},
-                       {"jak_shadows", lights.jak_shadows}};
+                       {"jak_shadows", lights.jak_shadows},
+                       {"surface_lights", lights.surface_lights},
+                       {"surface_strength", lights.surface_strength}};
   const auto path = lighting_settings_path();
   try {
     file_util::create_dir_if_needed_for_file(path);

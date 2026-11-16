@@ -85,12 +85,13 @@ set(RUNTIME_SOURCE
         graphics/opengl_renderer/SkyBlendGPU.cpp
         graphics/opengl_renderer/SkyRenderer.cpp
         graphics/opengl_renderer/SlowTimeEffect.cpp
-        graphics/opengl_renderer/GlowLight.cpp
-        graphics/opengl_renderer/LightingSettings.cpp
-        graphics/opengl_renderer/AutoExposure.cpp
-        graphics/opengl_renderer/PointLights.cpp
-        graphics/opengl_renderer/SSAO.cpp
-        graphics/opengl_renderer/SunShadow.cpp
+        graphics/opengl_renderer/lighting_mod/GlowLight.cpp
+        graphics/opengl_renderer/lighting_mod/LightingSettings.cpp
+        graphics/opengl_renderer/lighting_mod/AutoExposure.cpp
+        graphics/opengl_renderer/lighting_mod/PointLights.cpp
+        graphics/opengl_renderer/lighting_mod/SurfaceLights.cpp
+        graphics/opengl_renderer/lighting_mod/SSAO.cpp
+        graphics/opengl_renderer/lighting_mod/SunShadow.cpp
         graphics/opengl_renderer/sprite/GlowRenderer.cpp
         graphics/opengl_renderer/sprite/Sprite3_Distort.cpp
         graphics/opengl_renderer/sprite/Sprite3_Glow.cpp

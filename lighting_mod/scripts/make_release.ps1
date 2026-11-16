@@ -1,6 +1,6 @@
 # Lighting mod (AI-assisted): builds the release ZIP for OpenGOAL's launcher.
 #
-#   powershell -ExecutionPolicy Bypass -File scripts\lighting_mod\make_release.ps1 -Version v0.1.0
+#   powershell -ExecutionPolicy Bypass -File lighting_mod\scripts\make_release.ps1 -Version v0.1.0
 #
 # Same layout as OpenGOAL's own releases (.github/scripts/releases/extract_build_windows.sh):
 # gk.exe, goalc.exe and extractor.exe at the root (the statically linked build: no DLLs needed),
@@ -23,7 +23,7 @@ Set-Location $Root
 $BinDir = Join-Path $Root $Bin
 foreach ($exe in "gk.exe", "goalc.exe", "extractor.exe") {
   if (-not (Test-Path (Join-Path $BinDir $exe))) {
-    throw "$exe not found in $BinDir. Build the static release first (see MODPACK.md)."
+    throw "$exe not found in $BinDir. Build the static release first (see lighting_mod\docs\MODPACK.md)."
   }
 }
 
@@ -90,4 +90,4 @@ Set-Content -Path (Join-Path $Out "metadata.json") -Value '{"supportedGames": ["
 
 $size = [math]::Round((Get-Item $Zip).Length / 1MB)
 Write-Host "$count data files; $Zip ($size MB)"
-Write-Host "Next: create the GitHub release $Version and upload the ZIP and metadata.json (see MODPACK.md)."
+Write-Host "Next: create the GitHub release $Version and upload the ZIP and metadata.json (see lighting_mod\docs\MODPACK.md)."

@@ -10,7 +10,7 @@
 #include <cmath>
 
 #include "game/graphics/opengl_renderer/BucketRenderer.h"
-#include "game/graphics/opengl_renderer/SunModel.h"
+#include "game/graphics/opengl_renderer/lighting_mod/SunModel.h"
 
 inline float water_wave_time() {
   static const auto t0 = std::chrono::steady_clock::now();
@@ -182,5 +182,19 @@ inline bool set_water_uniforms(GLuint prog, SharedRenderState* rs) {
   glUniform1f(loc("ripple_strength"), rl.water_ripples);
   glUniform1f(loc("water_reflect"), rl.water_reflect);
   glUniform1f(loc("water_spec"), rl.water_spec);
+
+  // (AI-assisted) clear shallow water and shore foam: the scene depth from before the water
+  // (SSAO's depth copy) on texture unit 12
+  const bool depth_on = rl.scene_depth_valid && rl.scene_depth_tex != 0;
+  glUniform1i(loc("scene_depth_on"), depth_on ? 1 : 0);
+  if (depth_on) {
+    glActiveTexture(GL_TEXTURE12);
+    glBindTexture(GL_TEXTURE_2D, rl.scene_depth_tex);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(loc("scene_depth"), 12);
+  }
+  glUniform1f(loc("clear_depth_m"), rl.clear_water ? std::max(rl.clear_water_depth_m, 0.05f) : 0.f);
+  glUniform1f(loc("foam_strength"), rl.shore_foam ? rl.foam_strength : 0.f);
+  glUniform1f(loc("shallow_tint"), rl.shallow_tint);
   return true;
 }

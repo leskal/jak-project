@@ -4,12 +4,12 @@
 #include "common/log/log.h"
 #include "common/util/FileUtil.h"
 
-#include "game/graphics/opengl_renderer/WaterWaves.h"
+#include "game/graphics/opengl_renderer/lighting_mod/WaterWaves.h"
 #include "game/graphics/opengl_renderer/BlitDisplays.h"
 #include "game/graphics/opengl_renderer/DepthCue.h"
 #include "game/graphics/opengl_renderer/DirectRenderer.h"
 #include "game/graphics/opengl_renderer/EyeRenderer.h"
-#include "game/graphics/opengl_renderer/LightingSettings.h"
+#include "game/graphics/opengl_renderer/lighting_mod/LightingSettings.h"
 #include "game/graphics/opengl_renderer/ProgressRenderer.h"
 #include "game/graphics/opengl_renderer/ShadowRenderer.h"
 #include "game/graphics/opengl_renderer/SkyRenderer.h"
@@ -1243,6 +1243,15 @@ void OpenGLRenderer::draw_renderer_selection_window() {
         ImGui::Checkbox("Wakes around Jak", &rl.water_wakes);
         ImGui::SameLine();
         ImGui::SliderFloat("Wake strength", &rl.wake_strength, 0.f, 3.f);
+        // (AI-assisted) clear shallow water and shore foam
+        ImGui::Checkbox("Clear shallow water", &rl.clear_water);
+        ImGui::SliderFloat("Clear water depth (m)", &rl.clear_water_depth_m, 0.2f, 6.f);
+        ImGui::Checkbox("Shore foam", &rl.shore_foam);
+        ImGui::SliderFloat("Foam strength", &rl.foam_strength, 0.f, 2.f);
+        ImGui::SliderFloat("Shallow water tint", &rl.shallow_tint, 0.f, 1.f);
+        if (!rl.scene_depth_valid) {
+          ImGui::TextColored(ImVec4(1, 0.7f, 0.3f, 1), "  (clear water and foam need SSAO on)");
+        }
         if (rl.jak_valid) {
           ImGui::Text("Jak at (%.1f %.1f %.1f) m, feet %.1f m, rings now: %d, speed %.1f m/s",
                       rl.jak_pos_m[0], rl.jak_pos_m[1], rl.jak_pos_m[2], rl.jak_feet_m,

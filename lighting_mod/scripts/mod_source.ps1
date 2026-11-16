@@ -3,9 +3,9 @@
 #
 #   https://raw.githubusercontent.com/leskal/jak-project/gi-mod/mods.json
 #
-#   powershell -ExecutionPolicy Bypass -File scripts\lighting_mod\mod_source.ps1 -Add v0.1.0
+#   powershell -ExecutionPolicy Bypass -File lighting_mod\scripts\mod_source.ps1 -Add v0.1.0
 #       adds a version (newest first), after its GitHub release exists
-#   powershell -ExecutionPolicy Bypass -File scripts\lighting_mod\mod_source.ps1
+#   powershell -ExecutionPolicy Bypass -File lighting_mod\scripts\mod_source.ps1
 #       only rewrites the mod's texts (below)
 
 param([string]$Add = "")

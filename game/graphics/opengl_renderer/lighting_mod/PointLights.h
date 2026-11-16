@@ -26,6 +26,9 @@ class PointLights {
   int max_lights = 16;
   bool jak_shadows = true;        // (AI-assisted) Jak casts soft shadows from point lights
   float flicker = 0.35f;          // (AI-assisted) how much fire-colored lights flicker (0 = steady)
+  // (AI-assisted) lights from glowing level surfaces (fires, lava, lamps; see SurfaceLights.h)
+  bool surface_lights = true;
+  float surface_strength = 0.3f;
 
  private:
   struct Tracked {
@@ -39,6 +42,7 @@ class PointLights {
   std::chrono::steady_clock::time_point m_last_time;
   bool m_have_time = false;
   float m_time = 0.f;  // (AI-assisted) seconds, for the flicker
+  int m_last_surface = 0;  // (AI-assisted) glowing surface lights used last frame
   // (AI-assisted) debug for Jak's shadows
   bool m_occ_debug = false;
   int m_occ_count = 0;

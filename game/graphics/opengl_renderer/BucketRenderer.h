@@ -1,8 +1,10 @@
 #pragma once
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "common/dma/dma_chain_read.h"
@@ -75,6 +77,9 @@ struct SharedRenderState {
   };
   bool collect_particle_lights = false;
   std::vector<ParticleLightSample> particle_light_samples;
+  // (AI-assisted) the game's current time-of-day slot weights per level (from TFragment), which
+  // drive the flicker of fires and the pulse of lava; for the glowing surface lights
+  std::unordered_map<std::string, std::array<s32, 16>> level_itimes;
   // point lights for the shaders (filled by PointLights each frame)
   struct PointLightsGpu {
     int count = 0;
@@ -107,6 +112,15 @@ struct SharedRenderState {
     float water_spec = 1.f;       // sun glints
     bool water_wakes = true;      // ripples spreading from Jak in water
     float wake_strength = 1.f;
+    // (AI-assisted) clear shallow water and shore foam (need the scene depth: SSAO on)
+    bool clear_water = true;      // ponds, rivers, the sea: see-through where shallow
+    float clear_water_depth_m = 1.5f;  // water this deep (along the view) is ~63 % the game's color
+    bool shore_foam = true;       // foam on the sea where it gets shallow
+    float foam_strength = 1.f;
+    float shallow_tint = 0.5f;    // lighter sea over shallow ground
+    // the depth of the scene before the water is drawn (copied by SSAO after bucket 55)
+    GLuint scene_depth_tex = 0;
+    bool scene_depth_valid = false;
     // (runtime) where Jak is, from his model (meters, world)
     bool jak_valid = false;
     float jak_pos_m[3] = {0, 0, 0};

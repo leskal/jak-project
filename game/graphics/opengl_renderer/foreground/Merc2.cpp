@@ -5,8 +5,8 @@
 #include <cmath>
 #include <vector>
 
-#include "game/graphics/opengl_renderer/SunModel.h"
-#include "game/graphics/opengl_renderer/WaterWaves.h"
+#include "game/graphics/opengl_renderer/lighting_mod/SunModel.h"
+#include "game/graphics/opengl_renderer/lighting_mod/WaterWaves.h"
 
 #include "common/global_profiler/GlobalProfiler.h"
 #include "common/util/fnv.h"

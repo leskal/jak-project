@@ -153,6 +153,15 @@ void TFragment::render(DmaFollower& dma,
 
     settings.camera = m_pc_port_data.camera;
     settings.tree_idx = 0;
+    // (AI-assisted) lighting mod: remember this level's slot weights (fire flicker, lava pulse)
+    {
+      auto& it = render_state->level_itimes[level_name];
+      for (int q = 0; q < 4; q++) {
+        for (int w = 0; w < 4; w++) {
+          it[q * 4 + w] = settings.camera.itimes[q][w];
+        }
+      }
+    }
     if (render_state->occlusion_vis[m_level_id].valid) {
       settings.occlusion_culling = render_state->occlusion_vis[m_level_id].data;
     }
