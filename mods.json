@@ -1,7 +1,7 @@
 {
     "schemaVersion":  "1.0.0",
     "sourceName":  "Jak 1 Realistic Lighting",
-    "lastUpdated":  "2026-11-16T12:16:51Z",
+    "lastUpdated":  "2026-11-16T15:05:00Z",
     "mods":  {
                  "jak1-realistic-lighting":  {
                                                  "displayName":  "Jak 1 Realistic Lighting",
@@ -19,6 +19,18 @@
                                                                     ],
                                                  "websiteUrl":  "https://github.com/leskal/jak-project/tree/gi-mod",
                                                  "versions":  [
+                                                                  {
+                                                                      "version":  "0.2.0",
+                                                                      "publishedDate":  "2026-11-16T15:05:00Z",
+                                                                      "assets":  {
+                                                                                     "windows":  "https://github.com/leskal/jak-project/releases/download/v0.2.0/windows-jak1-realistic-lighting-v0.2.0.zip",
+                                                                                     "linux":  null,
+                                                                                     "macos":  null
+                                                                                 },
+                                                                      "supportedGames":  [
+                                                                                             "jak1"
+                                                                                         ]
+                                                                  },
                                                                   {
                                                                       "version":  "0.1.0",
                                                                       "publishedDate":  "2026-11-16T12:16:51Z",
