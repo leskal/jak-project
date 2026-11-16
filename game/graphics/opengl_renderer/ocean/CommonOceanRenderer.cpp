@@ -280,6 +280,7 @@ void CommonOceanRenderer::handle_near_adgif(const u8* data, u32 offset, u32 coun
 }
 
 void CommonOceanRenderer::flush_near(SharedRenderState* render_state, ScopedProfilerNode& prof) {
+  render_state->relight.sea_seen_time = water_wave_time();  // (AI-assisted) for the wet shore
   glBindVertexArray(m_ogl.vao);
   glBindBuffer(GL_ARRAY_BUFFER, m_ogl.vertex_buffer);
   glEnable(GL_PRIMITIVE_RESTART);
@@ -487,6 +488,7 @@ void reverse_indices(u32* indices, u32 count) {
 }
 
 void CommonOceanRenderer::flush_mid(SharedRenderState* render_state, ScopedProfilerNode& prof) {
+  render_state->relight.sea_seen_time = water_wave_time();  // (AI-assisted) for the wet shore
   glBindVertexArray(m_ogl.vao);
   glBindBuffer(GL_ARRAY_BUFFER, m_ogl.vertex_buffer);
   glEnable(GL_PRIMITIVE_RESTART);

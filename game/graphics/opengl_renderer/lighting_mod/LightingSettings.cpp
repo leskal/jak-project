@@ -86,6 +86,9 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "shore_foam", rl.shore_foam);
     get_if(r, "foam_strength", rl.foam_strength);
     get_if(r, "shallow_tint", rl.shallow_tint);
+    get_if(r, "wet_shore", rl.wet_shore);
+    get_if(r, "wet_band_m", rl.wet_band_m);
+    get_if(r, "wet_dark", rl.wet_dark);
     get_if(r, "auto_exposure_amount", rl.auto_exposure_amount);
     get_if(r, "auto_exposure_target", rl.auto_exposure_target);
     get_if(r, "auto_exposure_speed_s", rl.auto_exposure_speed_s);
@@ -202,6 +205,9 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"shore_foam", rl.shore_foam},
                   {"foam_strength", rl.foam_strength},
                   {"shallow_tint", rl.shallow_tint},
+                  {"wet_shore", rl.wet_shore},
+                  {"wet_band_m", rl.wet_band_m},
+                  {"wet_dark", rl.wet_dark},
                   {"auto_exposure_amount", rl.auto_exposure_amount},
                   {"auto_exposure_target", rl.auto_exposure_target},
                   {"auto_exposure_speed_s", rl.auto_exposure_speed_s},

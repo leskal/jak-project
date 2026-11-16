@@ -1249,6 +1249,9 @@ void OpenGLRenderer::draw_renderer_selection_window() {
         ImGui::Checkbox("Shore foam", &rl.shore_foam);
         ImGui::SliderFloat("Foam strength", &rl.foam_strength, 0.f, 2.f);
         ImGui::SliderFloat("Shallow water tint", &rl.shallow_tint, 0.f, 1.f);
+        ImGui::Checkbox("Wet shoreline", &rl.wet_shore);
+        ImGui::SliderFloat("Wet band height (m)", &rl.wet_band_m, 0.2f, 3.f);
+        ImGui::SliderFloat("Wet ground brightness", &rl.wet_dark, 0.4f, 1.f);
         if (!rl.scene_depth_valid) {
           ImGui::TextColored(ImVec4(1, 0.7f, 0.3f, 1), "  (clear water and foam need SSAO on)");
         }

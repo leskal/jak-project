@@ -222,8 +222,21 @@ vec3 scene_world(out bool sky) {
   return transpose(cam_rot) * c + cam_trans;
 }
 
-// (AI-assisted) the sea near the shore: see-through and lighter where shallow, foam at the edge
-void ocean_shore(inout vec4 col) {
+// (AI-assisted) the sea near the shore. Returns how opaque the water is there (0..1, multiplied
+// onto the game's alpha in the colour pass and in the alpha pass: the reflection layer drawn last
+// is weighted by that alpha, so both must agree or the shallows stay covered).
+float shore_alpha(vec3 wp, vec3 bed, float near) {
+  if (clear_depth_m <= 0.0) {
+    return 1.0;
+  }
+  float ray_m = length(bed - wp) / 4096.0;  // view ray through the water
+  return mix(1.0, mix(0.08, 1.0, 1.0 - exp(-ray_m / clear_depth_m)), near);
+}
+
+// lighter water over shallow ground, and foam: a thin, broken line at the water's edge and lace
+// that thins out into slightly deeper water. The waves move the surface up and down, so the
+// foam laps back and forth.
+void ocean_shore(inout vec4 col, bool alpha_pass) {
   bool sky;
   vec3 bed = scene_world(sky);
   if (sky) {
@@ -231,32 +244,37 @@ void ocean_shore(inout vec4 col) {
   }
   vec3 wp = frag_world();
   float depth_m = (wp.y - bed.y) / 4096.0;             // water depth under this point
-  float ray_m = length(bed - wp) / 4096.0;             // view ray through the water
   float dist_m = length(wp - cam_trans) / 4096.0;
   float near = 1.0 - smoothstep(40.0, 80.0, dist_m);   // far shores: no contour lines
   if (depth_m < -0.5) {
     return;  // ground in front of the water (seen through a gap): leave it
   }
-  // lighter, greener water over shallow ground
-  float sh = exp(-max(depth_m, 0.0) / 1.5) * shallow_tint * near;
-  col.rgb = mix(col.rgb, col.rgb * vec3(1.05, 1.3, 1.2) + vec3(0.02, 0.05, 0.05), sh);
-  // see-through where shallow
-  if (clear_depth_m > 0.0) {
-    col.a *= mix(1.0, mix(0.2, 1.0, 1.0 - exp(-ray_m / (clear_depth_m * 1.5))), near);
-  }
-  // foam: a band where the water gets shallow, broken up by moving noise; the waves move the
-  // surface up and down, so the foam laps back and forth
+  float a = shore_alpha(wp, bed, near);
+  float foam = 0.0;
   if (foam_strength > 0.0) {
     vec2 p = wp.xz / 4096.0;
-    float n = rip_noise(p * 1.7 + vec2(wave_time * 0.11, wave_time * 0.05)).x +
-              0.5 * rip_noise(p * 4.3 - vec2(wave_time * 0.17, -wave_time * 0.09)).x;
-    float band = 1.0 - smoothstep(0.0, 0.45, depth_m);
-    float edge = smoothstep(0.35, 0.75, band + n * 0.6);
-    float foam = edge * band * near * foam_strength;
-    vec3 foam_col = fog_color.rgb * 0.6 + sun_color * 0.25 + vec3(0.25);
-    col.rgb = mix(col.rgb, foam_col, clamp(foam, 0.0, 0.9));
-    col.a = max(col.a, clamp(foam, 0.0, 0.9));
+    float t = wave_time;
+    float n1 = rip_noise(p * 1.3 + vec2(t * 0.07, t * 0.04)).x;
+    float n2 = rip_noise(p * 3.7 - vec2(t * 0.12, -t * 0.08)).x;
+    float n3 = rip_noise(p * 9.0 + vec2(t * 0.2, t * 0.15)).x;
+    float lace = n1 * 0.55 + n2 * 0.3 + n3 * 0.15;      // about -0.6 .. 0.6
+    // the edge line: only the last few centimetres, broken up
+    float edge = (1.0 - smoothstep(0.0, 0.08, depth_m)) * smoothstep(-0.15, 0.2, lace);
+    // lace: patches that get rarer with depth, gone by ~0.35 m
+    float lace_f = smoothstep(0.15, 0.35, lace + 0.25 - depth_m * 1.6);
+    lace_f *= 1.0 - smoothstep(0.1, 0.35, depth_m);
+    foam = clamp(max(edge * 0.8, lace_f * 0.55), 0.0, 1.0) * near * foam_strength;
   }
+  if (alpha_pass) {
+    col.a = max(col.a * a, foam * 0.7);
+    return;
+  }
+  float sh = exp(-max(depth_m, 0.0) / 1.5) * shallow_tint * near;
+  col.rgb = mix(col.rgb, col.rgb * vec3(1.05, 1.3, 1.2) + vec3(0.02, 0.05, 0.05), sh);
+  col.a *= a;
+  vec3 foam_col = fog_color.rgb * 0.5 + sun_color * 0.2 + vec3(0.3);
+  col.rgb = mix(col.rgb, foam_col, clamp(foam, 0.0, 0.85));
+  col.a = max(col.a, foam * 0.7);
 }
 
 void main() {
@@ -267,12 +285,17 @@ void main() {
     if (waves_on == 1) {
       color.rgb = ocean_waves(color.rgb);
       if (scene_depth_on == 1) {
-        ocean_shore(color);
+        ocean_shore(color, false);
       }
     }
     color.rgb = mix(color.rgb, fog_color.rgb, clamp(fog_color.a * fog, 0, 1));
   } else if (bucket == 1 || bucket == 2 || bucket == 4) {
     color = fragment_color * T0;
+    // (AI-assisted) the near ocean's alpha pass: the same see-through shallows and foam as the
+    // colour pass, so the reflection layer (weighted by this alpha) leaves the shallows clear too
+    if (bucket == 1 && waves_on == 1 && scene_depth_on == 1) {
+      ocean_shore(color, true);
+    }
   } else if (bucket == 3) {
     color = fragment_color * T0;
     if (waves_on == 1) {

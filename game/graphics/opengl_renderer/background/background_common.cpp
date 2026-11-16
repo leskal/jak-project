@@ -3,7 +3,9 @@
 #include "background_common.h"
 
 #include "game/graphics/opengl_renderer/lighting_mod/SunModel.h"
+#include "game/graphics/opengl_renderer/lighting_mod/WaterWaves.h"
 
+#include <algorithm>
 #include <cmath>
 
 #include "common/util/os.h"
@@ -297,6 +299,16 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
     glUniform1f(glGetUniformLocation(id, "exposure"), rl.exposure);
     glUniform1f(glGetUniformLocation(id, "keep_painted"), rl.keep_painted);
     glUniform1f(glGetUniformLocation(id, "ground_smooth"), rl.ground_smooth);
+    // (AI-assisted) wet shoreline, only where the sea is drawn. The game's sea is at height 0
+    // (24 m lower when the camera is deep down: the sunken city; ocean.gc).
+    {
+      const bool sea = rl.wet_shore && water_wave_time() - rl.sea_seen_time < 0.5f;
+      const float sea_y = render_state->camera_pos.y() < -409600.f ? -98304.f : 0.f;
+      glUniform1f(glGetUniformLocation(id, "wet_strength"), sea ? 1.f : 0.f);
+      glUniform1f(glGetUniformLocation(id, "sea_level"), sea_y);
+      glUniform1f(glGetUniformLocation(id, "wet_band_m"), std::max(rl.wet_band_m, 0.05f));
+      glUniform1f(glGetUniformLocation(id, "wet_dark"), rl.wet_dark);
+    }
 
     // sun shadows. The sampler is always pointed at unit 6, so it never shares a unit with a
     // normal texture (OpenGL refuses to draw if two sampler types share a unit).

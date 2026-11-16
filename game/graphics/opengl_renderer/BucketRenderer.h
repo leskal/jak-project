@@ -118,6 +118,11 @@ struct SharedRenderState {
     bool shore_foam = true;       // foam on the sea where it gets shallow
     float foam_strength = 1.f;
     float shallow_tint = 0.5f;    // lighter sea over shallow ground
+    // (AI-assisted) wet shoreline: sand and rock darker with a wet sheen just above the sea
+    bool wet_shore = true;
+    float wet_band_m = 1.0f;      // height of the wet band above the sea on flat ground
+    float wet_dark = 0.68f;       // brightness of fully wet ground (1 = no change)
+    float sea_seen_time = -100.f; // when the sea was last drawn (water_wave_time(), seconds)
     // the depth of the scene before the water is drawn (copied by SSAO after bucket 55)
     GLuint scene_depth_tex = 0;
     bool scene_depth_valid = false;

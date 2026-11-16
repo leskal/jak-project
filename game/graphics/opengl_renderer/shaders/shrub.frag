@@ -231,6 +231,47 @@ float sun_ndl(vec3 N) {
   return max(dot(Ns, sun_dir), 0.0);
 }
 
+
+// (AI-assisted) wet shoreline: just above the sea, sand and rock are darker and carry a thin film
+// of water that catches the sun. Fully wet at the water line, dry at the top of the band (which
+// wanders with a little noise); steep faces get half the band.
+uniform float wet_strength;  // 0 = off (no sea in this level)
+uniform float sea_level;     // game units
+uniform float wet_band_m;
+uniform float wet_dark;
+
+float wet_hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float wet_noise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(wet_hash(i), wet_hash(i + vec2(1.0, 0.0)), u.x),
+             mix(wet_hash(i + vec2(0.0, 1.0)), wet_hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+vec3 wet_shore(vec3 col, vec3 wp, vec3 N, vec3 view, float sun_vis) {
+  if (wet_strength <= 0.0) {
+    return col;
+  }
+  float h_m = (wp.y - sea_level) / 4096.0;
+  float band = wet_band_m * mix(0.5, 1.0, smoothstep(0.5, 0.9, N.y));
+  if (h_m > band * 1.4) {
+    return col;
+  }
+  vec2 p = wp.xz / 4096.0;
+  float n = wet_noise(p * 0.5) * 0.65 + wet_noise(p * 1.7) * 0.35;
+  float top = band * (0.65 + 0.7 * n);
+  float wet = (1.0 - smoothstep(top * 0.35, top, h_m)) * wet_strength;
+  col *= mix(1.0, wet_dark, wet);
+  // water film: a sun glint, thinner toward the top of the band
+  vec3 V = normalize(-view);
+  vec3 H = normalize(normalize(sun_dir) + V);
+  float film = wet * (1.0 - smoothstep(0.0, top, h_m)) * smoothstep(0.3, 0.8, N.y);
+  col += sun_color * pow(max(dot(N, H), 0.0), 60.0) * film * 0.35 * sun_vis;
+  return col;
+}
+
 void main() {
   vec3 albedo = vec3(0.5);
   if (gfx_hack_no_tex == 0) {
@@ -299,6 +340,7 @@ void main() {
         vec3 light = ambient_color + sun_color * sun_ndl(N) * sun_vis;
         color.rgb *= mix(vec3(1.0), light, relight_amount);
       }
+      color.rgb = wet_shore(color.rgb, view_dir + cam_trans.xyz, N, view_dir, sun_vis);
     }
   }
 
