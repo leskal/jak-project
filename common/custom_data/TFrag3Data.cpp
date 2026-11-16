@@ -255,22 +255,52 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
       return std::hash<s64>()(k.x * 73856093LL ^ k.y * 19349663LL ^ k.z * 83492791LL);
     }
   };
-  // 16 game units = ~4 mm
-  std::unordered_map<Key, u32, KeyHash> pos_to_slot;
-  pos_to_slot.reserve(verts.size());
+  // (AI-assisted) weld points that are within ~1 cm (40 game units) of each other into one "slot".
+  // The level is stored in many pieces, and points on the border of two pieces are often a few
+  // mm apart, so look in the neighbouring grid cells too.
+  constexpr float kWeld = 40.f;
+  std::unordered_map<Key, std::vector<u32>, KeyHash> cell_slots;
+  cell_slots.reserve(verts.size());
+  std::vector<math::Vector3f> slot_pos;
   std::vector<u32> slot_of(verts.size());
   for (size_t i = 0; i < verts.size(); i++) {
-    Key k{(s64)std::llround(verts[i].x() / 16.f), (s64)std::llround(verts[i].y() / 16.f),
-          (s64)std::llround(verts[i].z() / 16.f)};
-    auto it = pos_to_slot.emplace(k, (u32)pos_to_slot.size()).first;
-    slot_of[i] = it->second;
+    const auto& p = verts[i];
+    const s64 cx = (s64)std::floor(p.x() / kWeld);
+    const s64 cy = (s64)std::floor(p.y() / kWeld);
+    const s64 cz = (s64)std::floor(p.z() / kWeld);
+    s64 found = -1;
+    for (int dx = -1; dx <= 1 && found < 0; dx++) {
+      for (int dy = -1; dy <= 1 && found < 0; dy++) {
+        for (int dz = -1; dz <= 1 && found < 0; dz++) {
+          auto it = cell_slots.find(Key{cx + dx, cy + dy, cz + dz});
+          if (it == cell_slots.end()) {
+            continue;
+          }
+          for (u32 sl : it->second) {
+            if ((slot_pos[sl] - p).squared_length() <= kWeld * kWeld) {
+              found = sl;
+              break;
+            }
+          }
+        }
+      }
+    }
+    if (found < 0) {
+      found = (s64)slot_pos.size();
+      slot_pos.push_back(p);
+      cell_slots[Key{cx, cy, cz}].push_back((u32)found);
+    }
+    slot_of[i] = (u32)found;
   }
-  // (AI-assisted) crease-aware smoothing. Each point first looks at the triangles it belongs to
-  // itself ("own" direction). Then it averages in the triangles of all points at the same position,
-  // but only those facing within ~78 degrees of its own direction. So a cliff wall doesn't average
-  // with the grass top above it (sharp edge), while rounded rocks and hills stay smooth.
-  std::vector<math::Vector3f> face_n;              // per triangle, length = 2 * area
-  std::vector<std::vector<u32>> slot_faces(pos_to_slot.size());
+  const size_t num_slots = slot_pos.size();
+
+  // Crease-aware smoothing. Each point first looks at the triangles it belongs to itself ("own"
+  // direction). Then it averages in the triangles of all points at the same position, but only
+  // those facing within ~78 degrees of its own direction. So a cliff wall doesn't average with
+  // the grass top above it (sharp edge), while rounded rocks and hills stay smooth.
+  std::vector<math::Vector3f> face_n;  // per triangle, length = 2 * area
+  std::vector<std::vector<u32>> slot_faces(num_slots);
+  std::vector<std::vector<u32>> slot_adj(num_slots);  // neighbouring slots (along triangle edges)
   std::vector<math::Vector3f> own(verts.size(), math::Vector3f::zero());
 
   auto add_tri = [&](u32 a, u32 b, u32 c) {
@@ -294,6 +324,19 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
       if (list.empty() || list.back() != face_idx) {
         list.push_back(face_idx);
       }
+    }
+    const u32 sa = slot_of[a], sb = slot_of[b], sc = slot_of[c];
+    if (sa != sb) {
+      slot_adj[sa].push_back(sb);
+      slot_adj[sb].push_back(sa);
+    }
+    if (sb != sc) {
+      slot_adj[sb].push_back(sc);
+      slot_adj[sc].push_back(sb);
+    }
+    if (sa != sc) {
+      slot_adj[sa].push_back(sc);
+      slot_adj[sc].push_back(sa);
     }
   };
 
@@ -324,9 +367,13 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
       }
     }
   }
+  for (auto& adj : slot_adj) {
+    std::sort(adj.begin(), adj.end());
+    adj.erase(std::unique(adj.begin(), adj.end()), adj.end());
+  }
 
   constexpr float kCreaseCos = 0.2f;  // cos(~78 degrees): only real sharp edges (~90) split
-  std::vector<u32> result(verts.size(), 0);
+  std::vector<math::Vector3f> vn(verts.size(), math::Vector3f::zero());
   for (size_t i = 0; i < verts.size(); i++) {
     math::Vector3f ref = own[i];
     float ref_len = ref.length();
@@ -344,13 +391,79 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
       }
     }
     float len = n.length();
-    if (!(len > 0.f)) {
-      n = ref;
-      len = 1.f;
+    vn[i] = len > 0.f ? n * (1.f / len) : ref;
+  }
+
+  // Wider smoothing for the ground: the terrain is low detail, made of big flat areas, so normals
+  // that are only averaged at the corners still look like flat patches. Points that are not on a
+  // sharp edge ("smooth" slots) are blended with their neighbours a few times, so the normal
+  // changes gradually over several triangles. Sharp edges are left alone.
+  std::vector<math::Vector3f> sn(num_slots, math::Vector3f::zero());
+  std::vector<u8> smooth_slot(num_slots, 0);
+  for (size_t sl = 0; sl < num_slots; sl++) {
+    math::Vector3f sum = math::Vector3f::zero();
+    for (u32 fi : slot_faces[sl]) {
+      const auto& fn = face_n[fi];
+      sum += (sum.dot(fn) < 0.f) ? fn * -1.f : fn;
     }
-    result[i] = pack_to_gl_normal((s16)std::lround(n.x() / len * 511.f),
-                                  (s16)std::lround(n.y() / len * 511.f),
-                                  (s16)std::lround(n.z() / len * 511.f));
+    const float l = sum.length();
+    if (!(l > 0.f)) {
+      continue;
+    }
+    sum = sum * (1.f / l);
+    bool smooth = true;
+    for (u32 fi : slot_faces[sl]) {
+      const auto& fn = face_n[fi];
+      if (std::abs(fn.dot(sum)) / fn.length() < 0.5f) {  // a face more than 60 deg off: an edge
+        smooth = false;
+        break;
+      }
+    }
+    sn[sl] = sum;
+    smooth_slot[sl] = smooth ? 1 : 0;
+  }
+  constexpr int kRelaxIterations = 8;
+  std::vector<math::Vector3f> next(num_slots);
+  for (int it = 0; it < kRelaxIterations; it++) {
+    for (size_t sl = 0; sl < num_slots; sl++) {
+      next[sl] = sn[sl];
+      if (!smooth_slot[sl]) {
+        continue;
+      }
+      math::Vector3f sum = sn[sl];
+      for (u32 nb : slot_adj[sl]) {
+        if (!smooth_slot[nb]) {
+          continue;
+        }
+        const float d = sn[nb].dot(sn[sl]);
+        if (std::abs(d) >= 0.5f) {
+          sum += d < 0.f ? sn[nb] * -1.f : sn[nb];
+        }
+      }
+      const float l = sum.length();
+      if (l > 0.f) {
+        next[sl] = sum * (1.f / l);
+      }
+    }
+    std::swap(sn, next);
+  }
+
+  std::vector<u32> result(verts.size(), 0);
+  for (size_t i = 0; i < verts.size(); i++) {
+    math::Vector3f n = vn[i];
+    if (!(n.squared_length() > 0.f)) {
+      continue;
+    }
+    const u32 sl = slot_of[i];
+    if (smooth_slot[sl]) {
+      const math::Vector3f& r = sn[sl];
+      const float d = r.dot(n);
+      if (std::abs(d) > 0.5f) {
+        n = d < 0.f ? r * -1.f : r;
+      }
+    }
+    result[i] = pack_to_gl_normal((s16)std::lround(n.x() * 511.f), (s16)std::lround(n.y() * 511.f),
+                                  (s16)std::lround(n.z() * 511.f));
   }
   return result;
 }
