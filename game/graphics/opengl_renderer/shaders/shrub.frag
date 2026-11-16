@@ -28,7 +28,13 @@ uniform float ground_smooth;
 
 // filmic tone curve (ACES fit): bright light rolls off smoothly instead of clipping
 float filmic_curve(float x) {
-  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+  // (AI-assisted) darks and midtones stay exactly as lit (so shadowed sides stay dark);
+  // only light above 0.6 is rolled off smoothly towards white instead of clipping.
+  const float a = 0.6;
+  if (x <= a) {
+    return x;
+  }
+  return a + (1.0 - a) * (1.0 - exp(-(x - a) / (1.0 - a)));
 }
 vec3 filmic(vec3 x) {
   // (AI-assisted) tone curve on brightness only, so colors keep their hue (blue stays blue)
@@ -57,6 +63,11 @@ uniform float shadow_strength;
 uniform float shadow_normal_offset;  // game units
 uniform vec4 cam_trans;
 // character shadows, drawn last frame
+// (AI-assisted) far shadow map, for things far from the camera
+uniform sampler2DShadow far_shadow_tex;
+uniform mat4 far_shadow_mat;
+uniform int far_shadow_enabled;
+uniform float far_shadow_normal_offset;
 uniform sampler2DShadow char_shadow_tex;
 uniform mat4 char_shadow_mat;
 uniform int char_shadow_enabled;
@@ -81,14 +92,26 @@ float sun_shadow(vec3 N) {
     return 1.0;
   }
   vec3 world = view_dir + cam_trans.xyz + N * shadow_normal_offset;
-  float s = 1.0;
+  float s_near = 1.0;
+  float near_w = 0.0;
   vec4 sc = shadow_mat * vec4(world, 1.0);
   if (in_shadow_map(sc)) {
-    // fade out at the edge of the shadow map area
+    // blend to the far map at the edge of the near map's area
     vec2 e = min(sc.xy, 1.0 - sc.xy);
-    float edge = clamp(min(e.x, e.y) * 10.0, 0.0, 1.0);
-    s = mix(1.0, pcf9(shadow_tex, sc.xyz), edge);
+    near_w = clamp(min(e.x, e.y) * 10.0, 0.0, 1.0);
+    s_near = pcf9(shadow_tex, sc.xyz);
   }
+  float s_far = 1.0;
+  if (far_shadow_enabled == 1 && near_w < 1.0) {
+    vec3 wf = view_dir + cam_trans.xyz + N * far_shadow_normal_offset;
+    vec4 fc = far_shadow_mat * vec4(wf, 1.0);
+    if (in_shadow_map(fc)) {
+      vec2 e = min(fc.xy, 1.0 - fc.xy);
+      float far_w = clamp(min(e.x, e.y) * 10.0, 0.0, 1.0);
+      s_far = mix(1.0, pcf9(far_shadow_tex, fc.xyz), far_w);
+    }
+  }
+  float s = mix(s_far, s_near, near_w);
   if (char_shadow_enabled == 1) {
     vec4 cc = char_shadow_mat * vec4(world, 1.0);
     if (in_shadow_map(cc)) {

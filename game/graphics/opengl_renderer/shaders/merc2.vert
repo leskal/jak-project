@@ -34,7 +34,7 @@ uniform mat3 cam_rot;      // camera space = cam_rot * (world - cam_trans_m)
 uniform vec3 cam_trans_m;
 out vec3 merc_world;       // world position
 out vec3 vtx_sun;          // the part of vtx_color that comes from the sun (light 0)
-out vec3 merc_normal;      // world space normal, for point lights
+out vec3 merc_normal;      // world space normal (sun, sky, point lights)
 out vec4 vtx_rgba;         // the model's own vertex color (Jak's clothes/hair colors live here)
 
 struct MercMatrixData {
@@ -110,6 +110,8 @@ void main() {
   vtx_rgba = rgba;
   vtx_sun = rgba.rgb * light_intensity.x * light_col0.rgb;
   merc_world = transpose(cam_rot) * (-vtx_pos.xyz) + cam_trans_m;
-  merc_normal = rotated_nrm;
+  // (AI-assisted) the bone matrices give the normal in camera space (like the position):
+  // turn it into world space, the same way as the position above
+  merc_normal = transpose(cam_rot) * rotated_nrm;
   vtx_st = st_in;
 }

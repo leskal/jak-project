@@ -97,6 +97,9 @@ struct SharedRenderState {
     // lights, instead of scaling the game's painted lighting.
     int mode = 1;                   // 0 = classic, 1 = physical
     bool auto_sun_color = true;     // sun / sky colors follow the sun height (atmosphere)
+    bool sky_from_game = true;      // (AI-assisted) sky light takes the color of the game's sky
+    bool auto_exposure = true;      // (AI-assisted) brighter exposure when there is less light
+    float auto_exposure_amount = 0.6f;  // 0 = none, 1 = full adaptation
     float sky_color[3] = {0.45f, 0.55f, 0.75f};
     float ground_color[3] = {0.35f, 0.30f, 0.24f};
     float exposure = 1.0f;
@@ -127,6 +130,11 @@ struct SharedRenderState {
     float shadow_strength = 0.f;
     float shadow_normal_offset = 0.f;  // game units
     float shadow_clip[16] = {};        // world -> shadow map clip space (for drawing into it)
+    // (AI-assisted) far shadow map (bigger area, less sharp)
+    bool far_shadow_valid = false;
+    GLuint far_shadow_tex = 0;
+    float far_shadow_mat[16] = {};
+    float far_shadow_normal_offset = 0.f;
 
     // characters (filled in each frame by SunShadow, used by Merc2)
     bool chars_receive = true;     // characters get darker in sun shadows

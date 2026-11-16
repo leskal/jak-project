@@ -36,7 +36,13 @@ uniform float exposure;
 
 // filmic tone curve (ACES fit): bright light rolls off smoothly instead of clipping
 float filmic_curve(float x) {
-  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+  // (AI-assisted) darks and midtones stay exactly as lit (so shadowed sides stay dark);
+  // only light above 0.6 is rolled off smoothly towards white instead of clipping.
+  const float a = 0.6;
+  if (x <= a) {
+    return x;
+  }
+  return a + (1.0 - a) * (1.0 - exp(-(x - a) / (1.0 - a)));
 }
 vec3 filmic(vec3 x) {
   // (AI-assisted) tone curve on brightness only, so colors keep their hue (blue stays blue)
@@ -162,6 +168,16 @@ void main() {
 
   if (relight_debug == 2 && shadow_enabled == 1) {
     color.rgb = vec3(sun_vis);
+  }
+  if (relight_debug == 1) {
+    // (AI-assisted) same colors as the level's normal view: up = green, so the top of Jak's
+    // head should match flat ground
+    float nl = length(merc_normal);
+    vec3 N = nl > 1e-6 ? merc_normal / nl : vec3(0.0, 1.0, 0.0);
+    color.rgb = N * 0.5 + 0.5;
+  }
+  if (relight_debug == 1 || relight_debug == 2) {
+    return;  // no fog in the debug views
   }
 
    color.xyz = mix(color.xyz, fog_color.rgb, clamp(fog_color.a * fog, 0, 1));

@@ -103,6 +103,7 @@ void setup_vao(GLuint vao, GLuint vertex_buffer, GLuint index_buffer) {
 
 SunShadow::~SunShadow() {
   free_target();
+  free_far_target();
   if (m_char_fbo[0]) {
     glDeleteFramebuffers(2, m_char_fbo);
     glDeleteTextures(2, m_char_tex);
@@ -126,6 +127,41 @@ void SunShadow::free_target() {
     m_fbo = 0;
     m_depth_tex = 0;
   }
+}
+
+// (AI-assisted) the far shadow map: same kind of texture, covering a much bigger area
+void SunShadow::free_far_target() {
+  if (m_far_fbo) {
+    glDeleteFramebuffers(1, &m_far_fbo);
+    glDeleteTextures(1, &m_far_tex);
+    m_far_fbo = 0;
+    m_far_tex = 0;
+  }
+}
+
+void SunShadow::setup_far_target() {
+  free_far_target();
+  m_far_res = far_resolution;
+  glGenTextures(1, &m_far_tex);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, m_far_tex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT32F, m_far_res, m_far_res, 0,
+               GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+  glGenFramebuffers(1, &m_far_fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, m_far_fbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_far_tex, 0);
+  glDrawBuffer(GL_NONE);
+  glReadBuffer(GL_NONE);
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    lg::error("SunShadow: far shadow framebuffer is incomplete");
+  }
+  lg::info("SunShadow: far shadow map {}x{}", m_far_res, m_far_res);
 }
 
 void SunShadow::setup_target() {
@@ -252,6 +288,7 @@ void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof
   auto& rl = render_state->relight;
   update_game_sun(rl);
   rl.shadow_valid = false;
+  rl.far_shadow_valid = false;
   rl.char_shadow_write = false;
   rl.char_shadow_valid = false;
   rl.chars_receive = chars_receive;
@@ -303,39 +340,40 @@ void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof
   // the shadows don't shimmer when the camera moves.
   const double C[3] = {render_state->camera_pos.x(), render_state->camera_pos.y(),
                        render_state->camera_pos.z()};
-  const double H = half_size_m * 4096.0;  // 4096 game units = 1 meter
-  const double D = depth_range_m * 4096.0;
   if (!m_fbo || m_tex_res != resolution) {
     setup_target();
   }
-  const double texel = 2.0 * H / m_tex_res;
   auto dot3 = [](const double* a, const double* b) {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   };
-  const double cr = std::round(dot3(C, r) / texel) * texel;
-  const double cu = std::round(dot3(C, u) / texel) * texel;
-  const double cf = dot3(C, f);
-
-  // world (game units) -> shadow map clip space, column major for OpenGL
-  float clip[16];
-  for (int col = 0; col < 3; col++) {
-    clip[col * 4 + 0] = (float)(r[col] / H);
-    clip[col * 4 + 1] = (float)(u[col] / H);
-    clip[col * 4 + 2] = (float)(f[col] / D);
-    clip[col * 4 + 3] = 0.f;
-  }
-  clip[12] = (float)(-cr / H);
-  clip[13] = (float)(-cu / H);
-  clip[14] = (float)(-cf / D);
-  clip[15] = 1.f;
-  // world -> shadow map texture coordinates (0..1), for the level shaders
-  for (int col = 0; col < 4; col++) {
-    for (int row = 0; row < 3; row++) {
-      rl.shadow_mat[col * 4 + row] = 0.5f * clip[col * 4 + row] + (col == 3 ? 0.5f : 0.f);
+  // world (game units) -> shadow map clip space (column major for OpenGL), for a map covering
+  // +/- H around the camera, +/- D along the sun direction, res x res texels
+  auto build = [&](double H, double D, int res, float* clip, float* tex_mat) {
+    // snap to whole shadow map texels, so the shadows don't shimmer when the camera moves
+    const double texel = 2.0 * H / res;
+    const double cr = std::round(dot3(C, r) / texel) * texel;
+    const double cu = std::round(dot3(C, u) / texel) * texel;
+    const double cf = dot3(C, f);
+    for (int col = 0; col < 3; col++) {
+      clip[col * 4 + 0] = (float)(r[col] / H);
+      clip[col * 4 + 1] = (float)(u[col] / H);
+      clip[col * 4 + 2] = (float)(f[col] / D);
+      clip[col * 4 + 3] = 0.f;
     }
-    rl.shadow_mat[col * 4 + 3] = clip[col * 4 + 3];
-  }
-
+    clip[12] = (float)(-cr / H);
+    clip[13] = (float)(-cu / H);
+    clip[14] = (float)(-cf / D);
+    clip[15] = 1.f;
+    // world -> shadow map texture coordinates (0..1), for the shaders
+    for (int col = 0; col < 4; col++) {
+      for (int row = 0; row < 3; row++) {
+        tex_mat[col * 4 + row] = 0.5f * clip[col * 4 + row] + (col == 3 ? 0.5f : 0.f);
+      }
+      tex_mat[col * 4 + 3] = clip[col * 4 + 3];
+    }
+  };
+  float clip[16];
+  build(half_size_m * 4096.0, depth_range_m * 4096.0, m_tex_res, clip, rl.shadow_mat);
   for (int i = 0; i < 16; i++) {
     rl.shadow_clip[i] = clip[i];
   }
@@ -414,6 +452,7 @@ void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof
     prof.add_draw_call();
   };
 
+  auto draw_level = [&]() {
   for (const LevelData* lev : render_state->loader->get_in_use_levels()) {
     if (!lev || !lev->level) {
       continue;
@@ -471,6 +510,33 @@ void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof
     }
   }
 
+  };
+  draw_level();
+
+  // (AI-assisted) far shadow map: the same level, from the same sun, over a much bigger area,
+  // so buildings and cliffs far away also get shadows
+  if (far_enabled) {
+    if (!m_far_fbo || m_far_res != far_resolution) {
+      setup_far_target();
+      glActiveTexture(GL_TEXTURE0);
+    }
+    float far_clip[16];
+    const double far_h = std::max(far_half_size_m, half_size_m * 1.5f) * 4096.0;
+    build(far_h, depth_range_m * 4096.0 + far_h, m_far_res, far_clip, rl.far_shadow_mat);
+    glBindFramebuffer(GL_FRAMEBUFFER, m_far_fbo);
+    glViewport(0, 0, m_far_res, m_far_res);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glPolygonOffset(2.f, 8.f);
+    sh.activate();
+    glUniformMatrix4fv(glGetUniformLocation(sh.id(), "light_mat"), 1, GL_FALSE, far_clip);
+    draw_level();
+    rl.far_shadow_valid = true;
+    rl.far_shadow_tex = m_far_tex;
+    // the far map's texels are bigger, so push further off the surface
+    rl.far_shadow_normal_offset =
+        normal_offset_m * 4096.f * (float)(far_h / (half_size_m * 4096.0)) * 0.5f;
+  }
+
   // forget about trees of levels that were unloaded
   for (auto it = m_trees.begin(); it != m_trees.end();) {
     if (m_frame - it->second.last_used_frame > 120) {
@@ -500,6 +566,9 @@ void SunShadow::draw_debug_window() {
   ImGui::Checkbox("Sun shadows", &enabled);
   ImGui::SliderFloat("Shadow strength", &strength, 0.f, 1.f);
   ImGui::SliderFloat("Shadow area (m)", &half_size_m, 10.f, 200.f);
+  ImGui::Checkbox("Far shadows", &far_enabled);
+  ImGui::SameLine();
+  ImGui::SliderFloat("Far shadow area (m)", &far_half_size_m, 100.f, 1500.f);
   ImGui::SliderFloat("Shadow offset (m)", &normal_offset_m, 0.f, 0.5f);
   if (ImGui::RadioButton("2048", resolution == 2048)) {
     resolution = 2048;

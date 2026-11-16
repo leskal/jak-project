@@ -33,6 +33,10 @@ class SunShadow {
   bool enabled = true;
   int resolution = 4096;       // shadow map size in pixels
   float half_size_m = 60.f;    // the shadow map covers this many meters around the camera
+  // second, bigger shadow map for things far away (less sharp) (AI-assisted)
+  bool far_enabled = true;
+  float far_half_size_m = 400.f;
+  int far_resolution = 4096;
   float depth_range_m = 400.f; // how far along the sun direction things can cast shadows
   float strength = 0.6f;       // 0 = no shadows, 1 = full shadows
   float normal_offset_m = 0.05f;  // pushes the lookup off the surface to avoid "acne"
@@ -48,6 +52,11 @@ class SunShadow {
  private:
   void setup_target();
   void free_target();
+  void setup_far_target();
+  void free_far_target();
+  GLuint m_far_fbo = 0;
+  GLuint m_far_tex = 0;
+  int m_far_res = 0;
 
   // filters the game's sun (see RelightSettings::game_sun_*)
   void update_game_sun(SharedRenderState::RelightSettings& rl);

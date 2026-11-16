@@ -286,7 +286,7 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
     // direction towards the sun (world space, y is up) and the light colors (SunModel.h)
     float L[3], sun[3], sky[3], ground[3];
     relight_sun_dir(rl, L);
-    relight_light_colors(rl, L, sun, sky, ground);
+    relight_light_colors(rl, L, sun, sky, ground, &render_state->fog_color[0]);
     glUniform3f(glGetUniformLocation(id, "sun_dir"), L[0], L[1], L[2]);
     glUniform3f(glGetUniformLocation(id, "sun_color"), sun[0], sun[1], sun[2]);
     glUniform3f(glGetUniformLocation(id, "ambient_color"), rl.ambient, rl.ambient, rl.ambient);
@@ -309,6 +309,19 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
       glUniformMatrix4fv(glGetUniformLocation(id, "shadow_mat"), 1, GL_FALSE, rl.shadow_mat);
       glUniform1f(glGetUniformLocation(id, "shadow_strength"), rl.shadow_strength);
       glUniform1f(glGetUniformLocation(id, "shadow_normal_offset"), rl.shadow_normal_offset);
+    }
+    // (AI-assisted) far shadow map, always on unit 8
+    glUniform1i(glGetUniformLocation(id, "far_shadow_tex"), 8);
+    glUniform1i(glGetUniformLocation(id, "far_shadow_enabled"),
+                rl.shadow_valid && rl.far_shadow_valid ? 1 : 0);
+    if (rl.shadow_valid && rl.far_shadow_valid) {
+      glActiveTexture(GL_TEXTURE8);
+      glBindTexture(GL_TEXTURE_2D, rl.far_shadow_tex);
+      glActiveTexture(GL_TEXTURE0);
+      glUniformMatrix4fv(glGetUniformLocation(id, "far_shadow_mat"), 1, GL_FALSE,
+                         rl.far_shadow_mat);
+      glUniform1f(glGetUniformLocation(id, "far_shadow_normal_offset"),
+                  rl.far_shadow_normal_offset);
     }
     // point lights from glowing particles
     glUniform1i(glGetUniformLocation(id, "pl_count"), render_state->point_lights.count);

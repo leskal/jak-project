@@ -71,6 +71,9 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "sun_smooth_s", rl.sun_smooth_s);
     get_if(r, "mode", rl.mode);
     get_if(r, "auto_sun_color", rl.auto_sun_color);
+    get_if(r, "sky_from_game", rl.sky_from_game);
+    get_if(r, "auto_exposure", rl.auto_exposure);
+    get_if(r, "auto_exposure_amount", rl.auto_exposure_amount);
     get_if(r, "exposure", rl.exposure);
     get_if(r, "keep_painted", rl.keep_painted);
     get_if(r, "ground_smooth", rl.ground_smooth);
@@ -95,6 +98,8 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(s, "enabled", sun.enabled);
     get_if(s, "resolution", sun.resolution);
     get_if(s, "half_size_m", sun.half_size_m);
+    get_if(s, "far_enabled", sun.far_enabled);
+    get_if(s, "far_half_size_m", sun.far_half_size_m);
     get_if(s, "strength", sun.strength);
     get_if(s, "normal_offset_m", sun.normal_offset_m);
     get_if(s, "tfrag_casts", sun.tfrag_casts);
@@ -158,6 +163,9 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"sun_jump_accept_s", rl.sun_jump_accept_s},
                   {"mode", rl.mode},
                   {"auto_sun_color", rl.auto_sun_color},
+                  {"sky_from_game", rl.sky_from_game},
+                  {"auto_exposure", rl.auto_exposure},
+                  {"auto_exposure_amount", rl.auto_exposure_amount},
                   {"exposure", rl.exposure},
                   {"keep_painted", rl.keep_painted},
                   {"ground_smooth", rl.ground_smooth},
@@ -166,6 +174,8 @@ bool lighting_settings_save(const SSAO& ssao,
   j["shadows"] = {{"enabled", sun.enabled},
                   {"resolution", sun.resolution},
                   {"half_size_m", sun.half_size_m},
+                  {"far_enabled", sun.far_enabled},
+                  {"far_half_size_m", sun.far_half_size_m},
                   {"strength", sun.strength},
                   {"normal_offset_m", sun.normal_offset_m},
                   {"tfrag_casts", sun.tfrag_casts},

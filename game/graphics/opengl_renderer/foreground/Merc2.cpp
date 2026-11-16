@@ -504,10 +504,18 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
   // the sun. Remember it so the level can be lit from the same direction (used next frame, since
   // the level is drawn before the characters).
   // The light directions are stored transposed: light 0 = (direction0.x, direction1.x, direction2.x)
+  // (and they are in camera space, see below)
   if (strncmp(name, "eichar", 6) == 0 || strncmp(name, "jakb", 4) == 0 ||
       strncmp(name, "jakc", 4) == 0) {
-    math::Vector3f d(current_lights.direction0.x(), current_lights.direction1.x(),
-                     current_lights.direction2.x());
+    // these directions are in camera space (the game lights characters in camera space), so
+    // turn them into world space: world = transpose(camera rotation) * camera-space direction
+    const math::Vector3f dc(current_lights.direction0.x(), current_lights.direction1.x(),
+                            current_lights.direction2.x());
+    math::Vector3f d;
+    for (int c = 0; c < 3; c++) {
+      d[c] = render_state->camera_rot[c][0] * dc[0] + render_state->camera_rot[c][1] * dc[1] +
+             render_state->camera_rot[c][2] * dc[2];
+    }
     float len = d.length();
     if (len > 1e-4f) {
       auto& rl = render_state->relight;
@@ -1330,7 +1338,7 @@ void Merc2::flush_draw_buckets(SharedRenderState* render_state,
       {
         float L[3], sun[3], sky[3], ground[3];
         relight_sun_dir(rl, L);
-        relight_light_colors(rl, L, sun, sky, ground);
+        relight_light_colors(rl, L, sun, sky, ground, &render_state->fog_color[0]);
         glUniform3f(glGetUniformLocation(mid, "sun_dir"), L[0], L[1], L[2]);
         glUniform3f(glGetUniformLocation(mid, "sun_color"), sun[0], sun[1], sun[2]);
         glUniform3f(glGetUniformLocation(mid, "sky_color"), sky[0], sky[1], sky[2]);

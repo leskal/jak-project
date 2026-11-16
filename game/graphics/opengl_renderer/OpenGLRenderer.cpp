@@ -1230,6 +1230,9 @@ void OpenGLRenderer::draw_renderer_selection_window() {
     ImGui::RadioButton("Classic", &rl.mode, 0);
     if (rl.mode == 1) {
       ImGui::Checkbox("Sun & sky color from sun height (atmosphere)", &rl.auto_sun_color);
+      ImGui::Checkbox("Sky light color from the game's sky", &rl.sky_from_game);
+      ImGui::Checkbox("Auto exposure (adapt to evening/night)", &rl.auto_exposure);
+      ImGui::SliderFloat("Auto exposure amount", &rl.auto_exposure_amount, 0.f, 1.f);
       ImGui::ColorEdit3("Sky light", rl.sky_color);
       ImGui::ColorEdit3("Ground bounce", rl.ground_color);
       ImGui::SliderFloat("Exposure", &rl.exposure, 0.3f, 3.f);
