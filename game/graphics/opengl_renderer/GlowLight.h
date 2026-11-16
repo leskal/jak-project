@@ -22,7 +22,7 @@ class GlowLight {
   void draw_debug_window();
 
   // --- settings ---
-  bool enabled = true;
+  bool enabled = false;  // replaced by PointLights, kept as an option
   float strength = 2.5f;           // how bright the light on surfaces is
   float radius_m = 4.f;            // how far the light reaches (meters)
   float particle_gain = 1.f;       // how much glowing particles emit

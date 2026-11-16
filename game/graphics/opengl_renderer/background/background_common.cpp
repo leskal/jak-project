@@ -2,6 +2,8 @@
 
 #include "background_common.h"
 
+#include "game/graphics/opengl_renderer/SunModel.h"
+
 #include <cmath>
 
 #include "common/util/os.h"
@@ -280,29 +282,21 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
   // (AI-assisted) relighting mod. Shaders that don't use these just ignore them.
   {
     const auto& rl = render_state->relight;
-    const float az = rl.sun_azimuth_deg * 3.14159265f / 180.f;
-    const float el = rl.sun_elevation_deg * 3.14159265f / 180.f;
     glUniform1f(glGetUniformLocation(id, "relight_amount"), rl.amount);
-    // direction towards the sun, in world space (y is up)
-    if (rl.use_game_sun && rl.game_sun_valid) {
-      glUniform3f(glGetUniformLocation(id, "sun_dir"), rl.game_sun_dir[0], rl.game_sun_dir[1],
-                  rl.game_sun_dir[2]);
-    } else {
-      glUniform3f(glGetUniformLocation(id, "sun_dir"), std::cos(el) * std::sin(az), std::sin(el),
-                  std::cos(el) * std::cos(az));
-    }
-    if (rl.use_game_colors && rl.game_sun_valid) {
-      glUniform3f(glGetUniformLocation(id, "sun_color"), rl.game_sun_color[0] * rl.sun_intensity,
-                  rl.game_sun_color[1] * rl.sun_intensity,
-                  rl.game_sun_color[2] * rl.sun_intensity);
-      glUniform3f(glGetUniformLocation(id, "ambient_color"), rl.game_ambient[0] * rl.ambient * 2.f,
-                  rl.game_ambient[1] * rl.ambient * 2.f, rl.game_ambient[2] * rl.ambient * 2.f);
-    } else {
-      glUniform3f(glGetUniformLocation(id, "sun_color"), rl.sun_color[0] * rl.sun_intensity,
-                  rl.sun_color[1] * rl.sun_intensity, rl.sun_color[2] * rl.sun_intensity);
-      glUniform3f(glGetUniformLocation(id, "ambient_color"), rl.ambient, rl.ambient, rl.ambient);
-    }
+    // direction towards the sun (world space, y is up) and the light colors (SunModel.h)
+    float L[3], sun[3], sky[3], ground[3];
+    relight_sun_dir(rl, L);
+    relight_light_colors(rl, L, sun, sky, ground);
+    glUniform3f(glGetUniformLocation(id, "sun_dir"), L[0], L[1], L[2]);
+    glUniform3f(glGetUniformLocation(id, "sun_color"), sun[0], sun[1], sun[2]);
+    glUniform3f(glGetUniformLocation(id, "ambient_color"), rl.ambient, rl.ambient, rl.ambient);
     glUniform1i(glGetUniformLocation(id, "relight_debug"), rl.debug);
+    glUniform1i(glGetUniformLocation(id, "relight_mode"), rl.mode);
+    glUniform3f(glGetUniformLocation(id, "sky_color"), sky[0], sky[1], sky[2]);
+    glUniform3f(glGetUniformLocation(id, "ground_color"), ground[0], ground[1], ground[2]);
+    glUniform1f(glGetUniformLocation(id, "exposure"), rl.exposure);
+    glUniform1f(glGetUniformLocation(id, "keep_painted"), rl.keep_painted);
+    glUniform1f(glGetUniformLocation(id, "ground_smooth"), rl.ground_smooth);
 
     // sun shadows. The sampler is always pointed at unit 6, so it never shares a unit with a
     // normal texture (OpenGL refuses to draw if two sampler types share a unit).
@@ -315,6 +309,14 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
       glUniformMatrix4fv(glGetUniformLocation(id, "shadow_mat"), 1, GL_FALSE, rl.shadow_mat);
       glUniform1f(glGetUniformLocation(id, "shadow_strength"), rl.shadow_strength);
       glUniform1f(glGetUniformLocation(id, "shadow_normal_offset"), rl.shadow_normal_offset);
+    }
+    // point lights from glowing particles
+    glUniform1i(glGetUniformLocation(id, "pl_count"), render_state->point_lights.count);
+    if (render_state->point_lights.count > 0) {
+      glUniform4fv(glGetUniformLocation(id, "pl_pos_radius"), render_state->point_lights.count,
+                   render_state->point_lights.pos_radius);
+      glUniform4fv(glGetUniformLocation(id, "pl_color"), render_state->point_lights.count,
+                   render_state->point_lights.color);
     }
     // character shadows (from last frame), always on unit 7
     glUniform1i(glGetUniformLocation(id, "char_shadow_tex"), 7);

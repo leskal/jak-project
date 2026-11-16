@@ -87,6 +87,7 @@ set(RUNTIME_SOURCE
         graphics/opengl_renderer/SlowTimeEffect.cpp
         graphics/opengl_renderer/GlowLight.cpp
         graphics/opengl_renderer/LightingSettings.cpp
+        graphics/opengl_renderer/PointLights.cpp
         graphics/opengl_renderer/SSAO.cpp
         graphics/opengl_renderer/SunShadow.cpp
         graphics/opengl_renderer/sprite/GlowRenderer.cpp

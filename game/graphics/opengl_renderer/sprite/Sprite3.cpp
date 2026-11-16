@@ -1,5 +1,7 @@
 #include "Sprite3.h"
 
+#include <cmath>
+
 #include "common/log/log.h"
 
 #include "game/graphics/opengl_renderer/background/background_common.h"
@@ -793,6 +795,32 @@ void Sprite3::do_block_common(SpriteMode mode,
   for (u32 sprite_idx = 0; sprite_idx < count; sprite_idx++) {
     if (m_sprite_idx == SPRITE_RENDERER_MAX_SPRITES) {
       flush_sprites(render_state, prof, mode == ModeHUD);
+    }
+
+    // (AI-assisted) point lights mod: additive ("glowing") particles are light sources.
+    // Recorded before the off-screen culling below, so lights near the edge don't pop.
+    if (mode != ModeHUD && render_state->collect_particle_lights &&
+        render_state->particle_light_samples.size() < 8192) {
+      GsAlpha reg(m_adgif[sprite_idx].alpha_data);
+      const bool additive = reg.a_mode() == GsAlpha::BlendMode::SOURCE &&
+                            reg.b_mode() == GsAlpha::BlendMode::ZERO_OR_FIXED &&
+                            reg.d_mode() == GsAlpha::BlendMode::DEST;
+      if (additive) {
+        const auto& v = m_vec_data_2d[sprite_idx];
+        // PS2 colors: 128 = 1.0
+        const float r = (float)((int)v.rgba.x() & 0xff) / 128.f;
+        const float g = (float)((int)v.rgba.y() & 0xff) / 128.f;
+        const float b = (float)((int)v.rgba.z() & 0xff) / 128.f;
+        const float a = reg.c_mode() == GsAlpha::BlendMode::SOURCE
+                            ? (float)((int)v.rgba.w() & 0xff) / 128.f
+                            : 1.f;
+        const float size_m = std::max(std::abs(v.xyz_sx.w()), std::abs(v.sy())) / 4096.f;
+        const float w = a * std::min(size_m * size_m, 4.f);
+        if (w > 0.f && (r + g + b) > 0.f) {
+          render_state->particle_light_samples.push_back(
+              {v.xyz_sx.x(), v.xyz_sx.y(), v.xyz_sx.z(), {r * w, g * w, b * w}});
+        }
+      }
     }
 
     if (mode == Mode2D && render_state->has_pc_data && m_enable_culling) {

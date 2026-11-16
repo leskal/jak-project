@@ -1,5 +1,9 @@
 #include "Merc2.h"
 
+#include <cmath>
+
+#include "game/graphics/opengl_renderer/SunModel.h"
+
 #include "common/global_profiler/GlobalProfiler.h"
 #include "common/util/fnv.h"
 #include "common/util/simd_util.h"
@@ -1309,7 +1313,33 @@ void Merc2::flush_draw_buckets(SharedRenderState* render_state,
       glUniform1i(glGetUniformLocation(mid, "shadow_tex"), 6);
       glUniform1i(glGetUniformLocation(mid, "shadow_enabled"), on ? 1 : 0);
       glUniform1i(glGetUniformLocation(mid, "relight_debug"), rl.debug);
-      if (on) {
+      // point lights need the world position too
+      const bool pl_on = render_state->point_lights.count > 0 && render_state->has_pc_data;
+      glUniform1i(glGetUniformLocation(mid, "pl_count"),
+                  pl_on ? render_state->point_lights.count : 0);
+      if (pl_on) {
+        glUniform4fv(glGetUniformLocation(mid, "pl_pos_radius"), render_state->point_lights.count,
+                     render_state->point_lights.pos_radius);
+        glUniform4fv(glGetUniformLocation(mid, "pl_color"), render_state->point_lights.count,
+                     render_state->point_lights.color);
+      }
+      // physical sun mode (only together with sun shadows, which provide the world position)
+      glUniform1i(glGetUniformLocation(mid, "relight_mode"), rl.mode);
+      glUniform1f(glGetUniformLocation(mid, "relight_amount"), rl.amount);
+      glUniform1f(glGetUniformLocation(mid, "exposure"), rl.exposure);
+      {
+        float L[3], sun[3], sky[3], ground[3];
+        relight_sun_dir(rl, L);
+        relight_light_colors(rl, L, sun, sky, ground);
+        glUniform3f(glGetUniformLocation(mid, "sun_dir"), L[0], L[1], L[2]);
+        glUniform3f(glGetUniformLocation(mid, "sun_color"), sun[0], sun[1], sun[2]);
+        glUniform3f(glGetUniformLocation(mid, "sky_color"), sky[0], sky[1], sky[2]);
+        glUniform3f(glGetUniformLocation(mid, "ground_color"), ground[0], ground[1], ground[2]);
+      }
+      // the camera (for world position / normal) is always sent, so characters get the same
+      // lighting whether sun shadows are on or off
+      glUniform1i(glGetUniformLocation(mid, "world_valid"), render_state->has_pc_data ? 1 : 0);
+      if (render_state->has_pc_data) {
         float cam_rot[9];
         for (int c = 0; c < 3; c++) {
           for (int r = 0; r < 3; r++) {
@@ -1319,6 +1349,8 @@ void Merc2::flush_draw_buckets(SharedRenderState* render_state,
         glUniformMatrix3fv(glGetUniformLocation(mid, "cam_rot"), 1, GL_FALSE, cam_rot);
         glUniform3f(glGetUniformLocation(mid, "cam_trans_m"), render_state->camera_pos.x(),
                     render_state->camera_pos.y(), render_state->camera_pos.z());
+      }
+      if (on) {
         glUniformMatrix4fv(glGetUniformLocation(mid, "shadow_mat"), 1, GL_FALSE, rl.shadow_mat);
         glUniform1f(glGetUniformLocation(mid, "shadow_strength"), rl.shadow_strength);
         glActiveTexture(GL_TEXTURE6);

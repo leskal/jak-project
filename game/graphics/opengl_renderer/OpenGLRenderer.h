@@ -12,6 +12,7 @@
 #include "game/graphics/opengl_renderer/SSAO.h"
 #include "game/graphics/opengl_renderer/SunShadow.h"
 #include "game/graphics/opengl_renderer/GlowLight.h"
+#include "game/graphics/opengl_renderer/PointLights.h"
 #include "game/graphics/opengl_renderer/Shader.h"
 #include "game/graphics/opengl_renderer/TextureAnimator.h"
 #include "game/graphics/opengl_renderer/foreground/Generic2.h"
@@ -133,6 +134,7 @@ class OpenGLRenderer {
   SSAO m_ssao;  // (AI-assisted) ambient occlusion mod
   SunShadow m_sun_shadow;  // (AI-assisted) relighting mod sun shadows
   GlowLight m_glow_light;  // (AI-assisted) glow light mod
+  PointLights m_point_lights;  // (AI-assisted) point lights from glowing particles
   CollideMeshRenderer m_collide_renderer;
 
   float m_last_pmode_alp = 1.;

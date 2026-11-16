@@ -26,6 +26,7 @@ std::string lighting_settings_path() {
 bool lighting_settings_load(SSAO& ssao,
                             SunShadow& sun,
                             GlowLight& glow,
+                            PointLights& lights,
                             SharedRenderState::RelightSettings& rl) {
   const auto path = lighting_settings_path();
   if (!file_util::file_exists(path)) {
@@ -68,6 +69,19 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "use_game_sun", rl.use_game_sun);
     get_if(r, "use_game_colors", rl.use_game_colors);
     get_if(r, "sun_smooth_s", rl.sun_smooth_s);
+    get_if(r, "mode", rl.mode);
+    get_if(r, "auto_sun_color", rl.auto_sun_color);
+    get_if(r, "exposure", rl.exposure);
+    get_if(r, "keep_painted", rl.keep_painted);
+    get_if(r, "ground_smooth", rl.ground_smooth);
+    for (const char* key : {"sky_color", "ground_color"}) {
+      if (r.contains(key) && r.at(key).is_array() && r.at(key).size() == 3) {
+        float* dst = std::string(key) == "sky_color" ? rl.sky_color : rl.ground_color;
+        for (int i = 0; i < 3; i++) {
+          dst[i] = r.at(key)[i].get<float>();
+        }
+      }
+    }
     get_if(r, "sun_jump_accept_s", rl.sun_jump_accept_s);
     if (r.contains("sun_color") && r.at("sun_color").is_array() &&
         r.at("sun_color").size() == 3) {
@@ -98,6 +112,14 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(g, "bright_surface_gain", glow.bright_surface_gain);
     get_if(g, "bright_threshold", glow.bright_threshold);
   }
+  if (j.contains("point_lights")) {
+    const auto& p = j.at("point_lights");
+    get_if(p, "enabled", lights.enabled);
+    get_if(p, "strength", lights.strength);
+    get_if(p, "cluster_size_m", lights.cluster_size_m);
+    get_if(p, "max_radius_m", lights.max_radius_m);
+    get_if(p, "max_lights", lights.max_lights);
+  }
   lg::info("lighting settings: loaded {}", path);
   return true;
 }
@@ -105,6 +127,7 @@ bool lighting_settings_load(SSAO& ssao,
 bool lighting_settings_save(const SSAO& ssao,
                             const SunShadow& sun,
                             const GlowLight& glow,
+                            const PointLights& lights,
                             const SharedRenderState::RelightSettings& rl) {
   json j;
   j["ssao"] = {{"enabled", ssao.enabled},
@@ -132,7 +155,14 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"use_game_sun", rl.use_game_sun},
                   {"use_game_colors", rl.use_game_colors},
                   {"sun_smooth_s", rl.sun_smooth_s},
-                  {"sun_jump_accept_s", rl.sun_jump_accept_s}};
+                  {"sun_jump_accept_s", rl.sun_jump_accept_s},
+                  {"mode", rl.mode},
+                  {"auto_sun_color", rl.auto_sun_color},
+                  {"exposure", rl.exposure},
+                  {"keep_painted", rl.keep_painted},
+                  {"ground_smooth", rl.ground_smooth},
+                  {"sky_color", {rl.sky_color[0], rl.sky_color[1], rl.sky_color[2]}},
+                  {"ground_color", {rl.ground_color[0], rl.ground_color[1], rl.ground_color[2]}}};
   j["shadows"] = {{"enabled", sun.enabled},
                   {"resolution", sun.resolution},
                   {"half_size_m", sun.half_size_m},
@@ -149,6 +179,11 @@ bool lighting_settings_save(const SSAO& ssao,
                {"particle_gain", glow.particle_gain},
                {"bright_surface_gain", glow.bright_surface_gain},
                {"bright_threshold", glow.bright_threshold}};
+  j["point_lights"] = {{"enabled", lights.enabled},
+                       {"strength", lights.strength},
+                       {"cluster_size_m", lights.cluster_size_m},
+                       {"max_radius_m", lights.max_radius_m},
+                       {"max_lights", lights.max_lights}};
   const auto path = lighting_settings_path();
   try {
     file_util::create_dir_if_needed_for_file(path);

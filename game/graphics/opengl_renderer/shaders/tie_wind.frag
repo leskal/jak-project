@@ -19,6 +19,33 @@ uniform vec3 sun_dir;          // towards the sun, world space
 uniform vec3 sun_color;
 uniform vec3 ambient_color;
 uniform int relight_debug;     // 1 = show normals
+uniform int relight_mode;      // 0 = classic, 1 = physical
+uniform vec3 sky_color;        // light from the sky (from above)
+uniform vec3 ground_color;     // light bounced from the ground (from below)
+uniform float exposure;
+uniform float keep_painted;
+uniform float ground_smooth;
+
+// filmic tone curve (ACES fit): bright light rolls off smoothly instead of clipping
+float filmic_curve(float x) {
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+vec3 filmic(vec3 x) {
+  // (AI-assisted) tone curve on brightness only, so colors keep their hue (blue stays blue)
+  // instead of each channel clipping towards white/cream. Only very bright light desaturates.
+  x = max(x, vec3(0.0));
+  float l = dot(x, vec3(0.2126, 0.7152, 0.0722));
+  if (l < 1e-5) {
+    return vec3(0.0);
+  }
+  vec3 c = x * (filmic_curve(l) / l);
+  float m = max(c.r, max(c.g, c.b));
+  if (m > 1.0) {
+    c /= m;
+  }
+  vec3 per_channel = vec3(filmic_curve(x.r), filmic_curve(x.g), filmic_curve(x.b));
+  return mix(c, per_channel, 0.15);
+}
 in vec3 world_normal;
 in vec3 view_dir;
 
@@ -72,10 +99,48 @@ float sun_shadow(vec3 N) {
   return mix(1.0, s, shadow_strength);
 }
 
+// (AI-assisted) point lights from glowing particles (see PointLights.cpp)
+uniform int pl_count;
+uniform vec4 pl_pos_radius[16];  // xyz = world position, w = reach (game units)
+uniform vec4 pl_color[16];
+
+vec3 point_lights(vec3 wp, vec3 N) {
+  vec3 sum = vec3(0.0);
+  for (int i = 0; i < pl_count; i++) {
+    vec3 L = pl_pos_radius[i].xyz - wp;
+    float d2 = dot(L, L);
+    float R = pl_pos_radius[i].w;
+    if (d2 >= R * R) {
+      continue;
+    }
+    float d = sqrt(d2);
+    L /= max(d, 1.0);
+    float ndl = max(dot(N, L), 0.0);
+    // smooth end of the light's reach
+    float x = d2 / (R * R);
+    float window = (1.0 - x * x);
+    window *= window;
+    // inverse square falloff, in meters, with a 0.5 m soft core
+    float d2_m = d2 / (4096.0 * 4096.0);
+    sum += pl_color[i].rgb * ndl * window / (d2_m + 0.25);
+  }
+  return sum;
+}
+
+// (AI-assisted) sun on up-facing ground: bend the normal towards "up" so the small slope changes
+// between big flat triangles don't show as patches when the sun is low.
+float sun_ndl(vec3 N) {
+  float k = ground_smooth * smoothstep(0.3, 0.9, N.y);
+  vec3 Ns = normalize(mix(N, vec3(0.0, 1.0, 0.0), k));
+  return max(dot(Ns, sun_dir), 0.0);
+}
+
 void main() {
+  vec3 albedo = vec3(0.5);
   if (gfx_hack_no_tex == 0) {
     //vec4 T0 = texture(tex_T0, tex_coord);
     vec4 T0 = texture(tex_T0, tex_coord.xy);
+    albedo = T0.rgb;
     color = fragment_color * T0;
   } else {
     color = fragment_color/2;
@@ -104,9 +169,30 @@ void main() {
     } else if (relight_debug == 2) {
       color.rgb = vec3(sun_shadow(N));
     } else {
-      vec3 light = ambient_color + sun_color * max(dot(N, sun_dir), 0.0) * sun_shadow(N);
-      color.rgb *= mix(vec3(1.0), light, relight_amount);
+      float sun_vis = sun_shadow(N);
+      if (relight_mode == 1) {
+        // physical: light the surface's own color with sun + sky, like real light
+        vec3 sky = mix(ground_color, sky_color, N.y * 0.5 + 0.5);
+        vec3 phys = albedo * (sun_color * sun_ndl(N) * sun_vis + sky) * exposure;
+        // keep a little of the game's painted shading (dirt, painted corners)
+        float painted = dot(fragment_color.rgb, vec3(0.333));
+        phys *= mix(1.0, clamp(painted, 0.2, 1.5), keep_painted);
+        phys = filmic(phys);
+        color.rgb = mix(color.rgb, phys, relight_amount);
+      } else {
+        vec3 light = ambient_color + sun_color * sun_ndl(N) * sun_vis;
+        color.rgb *= mix(vec3(1.0), light, relight_amount);
+      }
     }
+  }
+
+  // (AI-assisted) point lights from glowing particles: real light, added on top
+  if (pl_count > 0) {
+    vec3 Np = nlen > 1e-8 ? n_in / nlen : vec3(0.0, 1.0, 0.0);
+    if (dot(Np, view_dir) > 0.0) {
+      Np = -Np;
+    }
+    color.rgb += albedo * point_lights(view_dir + cam_trans.xyz, Np);
   }
 
   color.rgb = mix(color.rgb, fog_color.rgb, clamp(fogginess * fog_color.a, 0, 1));

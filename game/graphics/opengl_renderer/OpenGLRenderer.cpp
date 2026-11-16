@@ -987,7 +987,8 @@ void OpenGLRenderer::render(DmaFollower dma, const RenderOptions& settings) {
   {
     static bool s_lighting_settings_loaded = false;
     if (!s_lighting_settings_loaded) {
-      lighting_settings_load(m_ssao, m_sun_shadow, m_glow_light, m_render_state.relight);
+      lighting_settings_load(m_ssao, m_sun_shadow, m_glow_light, m_point_lights,
+                             m_render_state.relight);
       s_lighting_settings_loaded = true;
     }
     m_render_state.sprite_hook = [this](int stage) { m_glow_light.stage(stage, &m_render_state); };
@@ -1023,6 +1024,7 @@ void OpenGLRenderer::render(DmaFollower dma, const RenderOptions& settings) {
     g_current_renderer = "sun-shadow";
     auto prof = m_profiler.root()->make_scoped_child("sun-shadow");
     m_sun_shadow.render(&m_render_state, prof);
+    m_point_lights.update(&m_render_state);  // (AI-assisted) lights from last frame's particles
 
     // Jak 1 draws a dark blob shadow under characters. When they cast real sun shadows, that would
     // give them two shadows, so switch the blob shadow renderer off (and back on when not needed).
@@ -1183,14 +1185,15 @@ void OpenGLRenderer::draw_renderer_selection_window() {
     static std::string s_lighting_status;
     if (ImGui::Button("Save lighting settings")) {
       s_lighting_status =
-          lighting_settings_save(m_ssao, m_sun_shadow, m_glow_light, m_render_state.relight)
+          lighting_settings_save(m_ssao, m_sun_shadow, m_glow_light, m_point_lights,
+                                 m_render_state.relight)
               ? "saved"
               : "FAILED";
     }
     ImGui::SameLine();
     if (ImGui::Button("Load")) {
       s_lighting_status = lighting_settings_load(m_ssao, m_sun_shadow, m_glow_light,
-                                                 m_render_state.relight)
+                                                 m_point_lights, m_render_state.relight)
                               ? "loaded"
                               : "no saved file";
     }
@@ -1206,8 +1209,14 @@ void OpenGLRenderer::draw_renderer_selection_window() {
     ImGui::TreePop();
   }
 
-  // (AI-assisted) glow light mod settings
-  if (ImGui::TreeNode("Glow light (light from glowing things)")) {
+  // (AI-assisted) point lights from glowing particles
+  if (ImGui::TreeNode("Point lights (light from glowing particles)")) {
+    m_point_lights.draw_debug_window();
+    ImGui::TreePop();
+  }
+
+  // (AI-assisted) glow light mod settings (older screen-space version)
+  if (ImGui::TreeNode("Glow light (screen-space, older)")) {
     m_glow_light.draw_debug_window();
     ImGui::TreePop();
   }
@@ -1216,6 +1225,17 @@ void OpenGLRenderer::draw_renderer_selection_window() {
   if (ImGui::TreeNode("Relighting (experimental)")) {
     auto& rl = m_render_state.relight;
     ImGui::SliderFloat("Relight amount", &rl.amount, 0.f, 1.f);
+    ImGui::RadioButton("Physical sun", &rl.mode, 1);
+    ImGui::SameLine();
+    ImGui::RadioButton("Classic", &rl.mode, 0);
+    if (rl.mode == 1) {
+      ImGui::Checkbox("Sun & sky color from sun height (atmosphere)", &rl.auto_sun_color);
+      ImGui::ColorEdit3("Sky light", rl.sky_color);
+      ImGui::ColorEdit3("Ground bounce", rl.ground_color);
+      ImGui::SliderFloat("Exposure", &rl.exposure, 0.3f, 3.f);
+      ImGui::SliderFloat("Keep painted shading", &rl.keep_painted, 0.f, 1.f);
+      ImGui::SliderFloat("Smooth ground (low sun)", &rl.ground_smooth, 0.f, 1.f);
+    }
     ImGui::Checkbox("Use the game's sun direction", &rl.use_game_sun);
     ImGui::Checkbox("Use the game's light colors", &rl.use_game_colors);
     if (rl.game_sun_valid) {

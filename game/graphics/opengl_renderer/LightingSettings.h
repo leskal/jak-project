@@ -7,6 +7,7 @@
 
 #include "game/graphics/opengl_renderer/BucketRenderer.h"
 #include "game/graphics/opengl_renderer/GlowLight.h"
+#include "game/graphics/opengl_renderer/PointLights.h"
 #include "game/graphics/opengl_renderer/SSAO.h"
 #include "game/graphics/opengl_renderer/SunShadow.h"
 
@@ -15,8 +16,10 @@ std::string lighting_settings_path();
 bool lighting_settings_load(SSAO& ssao,
                             SunShadow& sun,
                             GlowLight& glow,
+                            PointLights& lights,
                             SharedRenderState::RelightSettings& rl);
 bool lighting_settings_save(const SSAO& ssao,
                             const SunShadow& sun,
                             const GlowLight& glow,
+                            const PointLights& lights,
                             const SharedRenderState::RelightSettings& rl);

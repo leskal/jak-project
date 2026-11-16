@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "common/dma/dma_chain_read.h"
 
@@ -67,15 +68,40 @@ struct SharedRenderState {
   // and 1 right after them (before the HUD)
   std::function<void(int)> sprite_hook;
 
+  // (AI-assisted) point lights mod: glowing (additive) particles seen this frame, by Sprite3
+  struct ParticleLightSample {
+    float x, y, z;     // world position (game units)
+    float color[3];    // color * alpha * area (m^2): how much light it gives
+  };
+  bool collect_particle_lights = false;
+  std::vector<ParticleLightSample> particle_light_samples;
+  // point lights for the shaders (filled by PointLights each frame)
+  struct PointLightsGpu {
+    int count = 0;
+    float pos_radius[16 * 4] = {};  // xyz = world position, w = reach (game units)
+    float color[16 * 4] = {};
+  } point_lights;
+
   // (AI-assisted) relighting mod: real sun lighting on level geometry
   struct RelightSettings {
-    float amount = 0.5f;            // 0 = original baked lighting, 1 = fully relit
+    float amount = 1.0f;            // 0 = original baked lighting, 1 = fully relit
     float sun_azimuth_deg = 45.f;   // compass direction of the sun
     float sun_elevation_deg = 50.f; // height of the sun above the horizon
-    float sun_intensity = 0.8f;
+    float sun_intensity = 2.2f;
     float sun_color[3] = {1.f, 0.95f, 0.85f};
-    float ambient = 0.6f;           // light that comes from everywhere (sky)
+    float ambient = 0.8f;           // light that comes from everywhere (sky)
     int debug = 0;                  // 1 = show normals as colors
+
+    // Physical sun mode: surfaces are lit from their own (texture) color by a warm sun and a
+    // direction-dependent sky (blue from above, warm bounce from the ground), like the point
+    // lights, instead of scaling the game's painted lighting.
+    int mode = 1;                   // 0 = classic, 1 = physical
+    bool auto_sun_color = true;     // sun / sky colors follow the sun height (atmosphere)
+    float sky_color[3] = {0.45f, 0.55f, 0.75f};
+    float ground_color[3] = {0.35f, 0.30f, 0.24f};
+    float exposure = 1.0f;
+    float keep_painted = 0.35f;     // how much of the game's painted shading to keep (0..1)
+    float ground_smooth = 0.6f;     // (AI-assisted) hide triangle patches on ground under a low sun
 
     // sun taken from the game (the light the game uses on Jak, see Merc2.cpp)
     bool use_game_sun = true;       // use the game's sun direction instead of the sliders
