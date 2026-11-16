@@ -73,6 +73,12 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "auto_sun_color", rl.auto_sun_color);
     get_if(r, "sky_from_game", rl.sky_from_game);
     get_if(r, "auto_exposure", rl.auto_exposure);
+    get_if(r, "water_waves", rl.water_waves);
+    get_if(r, "wave_height_m", rl.wave_height_m);
+    get_if(r, "wave_range_m", rl.wave_range_m);
+    get_if(r, "water_ripples", rl.water_ripples);
+    get_if(r, "water_reflect", rl.water_reflect);
+    get_if(r, "water_spec", rl.water_spec);
     get_if(r, "auto_exposure_amount", rl.auto_exposure_amount);
     get_if(r, "auto_exposure_target", rl.auto_exposure_target);
     get_if(r, "auto_exposure_speed_s", rl.auto_exposure_speed_s);
@@ -172,6 +178,12 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"auto_sun_color", rl.auto_sun_color},
                   {"sky_from_game", rl.sky_from_game},
                   {"auto_exposure", rl.auto_exposure},
+                  {"water_waves", rl.water_waves},
+                  {"wave_height_m", rl.wave_height_m},
+                  {"wave_range_m", rl.wave_range_m},
+                  {"water_ripples", rl.water_ripples},
+                  {"water_reflect", rl.water_reflect},
+                  {"water_spec", rl.water_spec},
                   {"auto_exposure_amount", rl.auto_exposure_amount},
                   {"auto_exposure_target", rl.auto_exposure_target},
                   {"auto_exposure_speed_s", rl.auto_exposure_speed_s},

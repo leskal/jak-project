@@ -98,6 +98,13 @@ struct SharedRenderState {
     int mode = 1;                   // 0 = classic, 1 = physical
     bool auto_sun_color = true;     // sun / sky colors follow the sun height (atmosphere)
     bool sky_from_game = true;      // (AI-assisted) sky light takes the color of the game's sky
+    // (AI-assisted) water waves
+    bool water_waves = true;
+    float wave_height_m = 0.35f;  // ocean swell (the surface really moves)
+    float wave_range_m = 25.f;    // the surface moves only this close to the camera
+    float water_ripples = 0.7f;   // small ripples (lighting only)
+    float water_reflect = 1.f;    // sky reflection
+    float water_spec = 1.f;       // sun glints
     // (AI-assisted) auto exposure: measures the screen and adapts, like a camera / your eyes
     bool auto_exposure = true;
     float auto_exposure_amount = 0.8f;   // 0 = none, 1 = always reach the target

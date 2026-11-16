@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "game/graphics/opengl_renderer/SunModel.h"
+#include "game/graphics/opengl_renderer/WaterWaves.h"
 
 #include "common/global_profiler/GlobalProfiler.h"
 #include "common/util/fnv.h"
@@ -657,6 +658,11 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
   DrawArgs args;
   args.lev_bucket = lev_bucket;
   args.jak1_water_mode = uses_water;
+  // (AI-assisted) the game's water surfaces (rivers, ponds, lakes) are "water-anim" models;
+  // lava, mud and dark eco are also water-anim, but shouldn't look like water
+  args.water_waves = render_state->version == GameVersion::Jak1 &&
+                     strncmp(name, "water-anim", 10) == 0 && !strstr(name, "lava") &&
+                     !strstr(name, "mud") && !strstr(name, "dark-eco");
   args.disable_fog = model_disables_fog;
   args.hash = hash;
   args.lights = lights;
@@ -1145,6 +1151,9 @@ Merc2::Draw* Merc2::alloc_normal_draw(const tfrag3::MercDraw& mdraw, const DrawA
   if (args.no_texture) {
     draw->flags |= NO_TEXTURE;
   }
+  if (args.water_waves) {
+    draw->flags |= WATER_WAVES;
+  }
   for (int i = 0; i < 4; i++) {
     draw->fade[i] = 0;
   }
@@ -1357,6 +1366,7 @@ void Merc2::flush_draw_buckets(SharedRenderState* render_state,
       // the camera (for world position / normal) is always sent, so characters get the same
       // lighting whether sun shadows are on or off
       glUniform1i(glGetUniformLocation(mid, "world_valid"), render_state->has_pc_data ? 1 : 0);
+      set_water_uniforms(mid, render_state);  // (AI-assisted) water waves
       if (render_state->has_pc_data) {
         float cam_rot[9];
         for (int c = 0; c < 3; c++) {
@@ -1405,8 +1415,21 @@ void Merc2::do_draws(const Draw* draw_array,
 
   bool fog_on = true;
 
+  // (AI-assisted) water surfaces get waves (only the merc2 shader has this uniform)
+  GLint current_program = 0;
+  glGetIntegerv(GL_CURRENT_PROGRAM, &current_program);
+  const GLint is_water_loc = glGetUniformLocation(current_program, "is_water");
+  int last_water = -1;
+
   for (u32 di = 0; di < num_draws; di++) {
     auto& draw = draw_array[di];
+    if (is_water_loc >= 0) {
+      const int w = (draw.flags & WATER_WAVES) ? 1 : 0;
+      if (w != last_water) {
+        glUniform1i(is_water_loc, w);
+        last_water = w;
+      }
+    }
     if (draw.flags & MOD_VTX) {
       glBindVertexArray(draw.mod_vtx_buffer.vao);
       glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, lev->merc_indices);

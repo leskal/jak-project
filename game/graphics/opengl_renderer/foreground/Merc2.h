@@ -178,6 +178,7 @@ class Merc2 {
     IGNORE_ALPHA = 1,
     MOD_VTX = 2,
     NO_TEXTURE = 4,
+    WATER_WAVES = 8,  // (AI-assisted) water surface: ripples, reflections, glints
   };
 
   struct Draw {
@@ -217,6 +218,7 @@ class Merc2 {
     bool ignore_alpha;
     bool disable_fog;
     bool no_texture;
+    bool water_waves;  // (AI-assisted)
     u64 hash;
     u32 lights;
     u32 first_bone;

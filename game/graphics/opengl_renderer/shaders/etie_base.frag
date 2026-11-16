@@ -217,6 +217,18 @@ void main() {
     if (dot(N, view_dir) > 0.0) {
       N = -N;  // winding in the game data isn't reliable: use the side facing the camera
     }
+    // (AI-assisted) the smooth normals are computed when the level loads, by averaging
+    // neighbouring triangles. At sharp edges (grass top -> cliff wall) a narrow wall can get the
+    // top's "up" averaged in and point the wrong way. Where the smooth normal disagrees a lot with
+    // the triangle's real direction, use the real direction instead.
+    float face_len = length(face_n);
+    if (face_len > 1e-12) {
+      vec3 F = face_n / face_len;
+      if (dot(F, view_dir) > 0.0) {
+        F = -F;
+      }
+      N = normalize(mix(F, N, smoothstep(0.0, 0.35, dot(N, F))));
+    }
     if (relight_debug == 1) {
       color.rgb = N * 0.5 + 0.5;
     } else if (relight_debug == 2) {

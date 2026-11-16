@@ -1232,6 +1232,14 @@ void OpenGLRenderer::draw_renderer_selection_window() {
     if (rl.mode == 1) {
       ImGui::Checkbox("Sun & sky color from sun height (atmosphere)", &rl.auto_sun_color);
       ImGui::Checkbox("Sky light color from the game's sky", &rl.sky_from_game);
+      ImGui::Checkbox("Water waves", &rl.water_waves);
+      if (rl.water_waves) {
+        ImGui::SliderFloat("Ocean wave height (m)", &rl.wave_height_m, 0.f, 1.5f);
+        ImGui::SliderFloat("Moving waves area (m)", &rl.wave_range_m, 5.f, 80.f);
+        ImGui::SliderFloat("Water ripples", &rl.water_ripples, 0.f, 2.f);
+        ImGui::SliderFloat("Water reflection", &rl.water_reflect, 0.f, 1.5f);
+        ImGui::SliderFloat("Sun glints", &rl.water_spec, 0.f, 3.f);
+      }
       ImGui::Checkbox("Auto exposure (measures the screen, like a camera)", &rl.auto_exposure);
       if (rl.auto_exposure) {
         ImGui::SliderFloat("Auto exposure target", &rl.auto_exposure_target, 0.05f, 0.6f);

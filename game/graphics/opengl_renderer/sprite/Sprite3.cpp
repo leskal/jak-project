@@ -799,7 +799,9 @@ void Sprite3::do_block_common(SpriteMode mode,
 
     // (AI-assisted) point lights mod: additive ("glowing") particles are light sources.
     // Recorded before the off-screen culling below, so lights near the edge don't pop.
-    if (mode != ModeHUD && render_state->collect_particle_lights &&
+    // Only camera-facing particles (fire, sparks, glows): flat "3D" sprites are things like the
+    // ripple rings on water, which shouldn't light anything.
+    if (mode == Mode2D && render_state->collect_particle_lights &&
         render_state->particle_light_samples.size() < 8192) {
       GsAlpha reg(m_adgif[sprite_idx].alpha_data);
       const bool additive = reg.a_mode() == GsAlpha::BlendMode::SOURCE &&

@@ -265,7 +265,13 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
     auto it = pos_to_slot.emplace(k, (u32)pos_to_slot.size()).first;
     slot_of[i] = it->second;
   }
-  std::vector<math::Vector3f> acc(pos_to_slot.size(), math::Vector3f::zero());
+  // (AI-assisted) crease-aware smoothing. Each point first looks at the triangles it belongs to
+  // itself ("own" direction). Then it averages in the triangles of all points at the same position,
+  // but only those facing within ~78 degrees of its own direction. So a cliff wall doesn't average
+  // with the grass top above it (sharp edge), while rounded rocks and hills stay smooth.
+  std::vector<math::Vector3f> face_n;              // per triangle, length = 2 * area
+  std::vector<std::vector<u32>> slot_faces(pos_to_slot.size());
+  std::vector<math::Vector3f> own(verts.size(), math::Vector3f::zero());
 
   auto add_tri = [&](u32 a, u32 b, u32 c) {
     if (a == b || b == c || a == c || a >= verts.size() || b >= verts.size() ||
@@ -279,9 +285,15 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
     if (!(fn.squared_length() > 0.f)) {
       return;
     }
+    const u32 face_idx = (u32)face_n.size();
+    face_n.push_back(fn);
     for (u32 v : {a, b, c}) {
-      auto& n = acc[slot_of[v]];
+      auto& n = own[v];
       n += (n.dot(fn) < 0.f) ? fn * -1.f : fn;
+      auto& list = slot_faces[slot_of[v]];
+      if (list.empty() || list.back() != face_idx) {
+        list.push_back(face_idx);
+      }
     }
   };
 
@@ -313,15 +325,32 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
     }
   }
 
+  constexpr float kCreaseCos = 0.2f;  // cos(~78 degrees): only real sharp edges (~90) split
   std::vector<u32> result(verts.size(), 0);
   for (size_t i = 0; i < verts.size(); i++) {
-    const auto& n = acc[slot_of[i]];
-    float len = n.length();
-    if (len > 0.f) {
-      result[i] = pack_to_gl_normal((s16)std::lround(n.x() / len * 511.f),
-                                    (s16)std::lround(n.y() / len * 511.f),
-                                    (s16)std::lround(n.z() / len * 511.f));
+    math::Vector3f ref = own[i];
+    float ref_len = ref.length();
+    if (!(ref_len > 0.f)) {
+      continue;  // not used by any triangle
     }
+    ref = ref * (1.f / ref_len);
+    math::Vector3f n = math::Vector3f::zero();
+    for (u32 fi : slot_faces[slot_of[i]]) {
+      const auto& fn = face_n[fi];
+      const float fl = fn.length();
+      const float d = fn.dot(ref) / fl;
+      if (std::abs(d) >= kCreaseCos) {
+        n += d < 0.f ? fn * -1.f : fn;
+      }
+    }
+    float len = n.length();
+    if (!(len > 0.f)) {
+      n = ref;
+      len = 1.f;
+    }
+    result[i] = pack_to_gl_normal((s16)std::lround(n.x() / len * 511.f),
+                                  (s16)std::lround(n.y() / len * 511.f),
+                                  (s16)std::lround(n.z() / len * 511.f));
   }
   return result;
 }

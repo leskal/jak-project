@@ -1,5 +1,7 @@
 #include "CommonOceanRenderer.h"
 
+#include "game/graphics/opengl_renderer/WaterWaves.h"
+
 #include "common/log/log.h"
 
 constexpr int OCEAN_TEX_TBP_JAK1 = 8160;  // todo
@@ -285,6 +287,11 @@ void CommonOceanRenderer::flush_near(SharedRenderState* render_state, ScopedProf
   glBufferData(GL_ARRAY_BUFFER, m_next_free_vertex * sizeof(Vertex), m_vertices.data(),
                GL_STREAM_DRAW);
   render_state->shaders[ShaderId::OCEAN_COMMON].activate();
+  // (AI-assisted) water waves
+  const bool waves =
+      set_water_uniforms(render_state->shaders[ShaderId::OCEAN_COMMON].id(), render_state);
+  const GLint displace_loc =
+      glGetUniformLocation(render_state->shaders[ShaderId::OCEAN_COMMON].id(), "displace");
   glUniform4f(glGetUniformLocation(render_state->shaders[ShaderId::OCEAN_COMMON].id(), "fog_color"),
               render_state->fog_color[0] / 255.f, render_state->fog_color[1] / 255.f,
               render_state->fog_color[2] / 255.f, render_state->fog_intensity / 255);
@@ -343,7 +350,32 @@ void CommonOceanRenderer::flush_near(SharedRenderState* render_state, ScopedProf
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ogl.index_buffer[bucket]);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, m_next_free_index[bucket] * sizeof(u32),
                  m_indices[bucket].data(), GL_STREAM_DRAW);
-    glDrawElements(GL_TRIANGLE_STRIP, m_next_free_index[bucket], GL_UNSIGNED_INT, nullptr);
+    if (waves) {
+      // (AI-assisted) the moving surface can have small gaps between patches with different
+      // detail. Draw it while marking its pixels in the stencil buffer, then draw the flat
+      // surface only where nothing was marked (the gaps), so no pixel is blended twice.
+      GLboolean scissor_on = glIsEnabled(GL_SCISSOR_TEST);
+      glDisable(GL_SCISSOR_TEST);
+      glStencilMask(0xFF);
+      glClearStencil(0);
+      glClear(GL_STENCIL_BUFFER_BIT);
+      if (scissor_on) {
+        glEnable(GL_SCISSOR_TEST);
+      }
+      glEnable(GL_STENCIL_TEST);
+      glStencilFunc(GL_ALWAYS, 1, 0xFF);
+      glStencilOp(GL_KEEP, GL_REPLACE, GL_REPLACE);
+      glUniform1i(displace_loc, 1);
+      glDrawElements(GL_TRIANGLE_STRIP, m_next_free_index[bucket], GL_UNSIGNED_INT, nullptr);
+      glStencilFunc(GL_EQUAL, 0, 0xFF);
+      glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+      glUniform1i(displace_loc, 0);
+      glDrawElements(GL_TRIANGLE_STRIP, m_next_free_index[bucket], GL_UNSIGNED_INT, nullptr);
+      glUniform1i(displace_loc, 1);
+      glDisable(GL_STENCIL_TEST);
+    } else {
+      glDrawElements(GL_TRIANGLE_STRIP, m_next_free_index[bucket], GL_UNSIGNED_INT, nullptr);
+    }
     prof.add_draw_call();
     prof.add_tri(m_next_free_index[bucket]);
   }
@@ -462,6 +494,12 @@ void CommonOceanRenderer::flush_mid(SharedRenderState* render_state, ScopedProfi
   glBufferData(GL_ARRAY_BUFFER, m_next_free_vertex * sizeof(Vertex), m_vertices.data(),
                GL_STREAM_DRAW);
   render_state->shaders[ShaderId::OCEAN_COMMON].activate();
+  // (AI-assisted) water waves
+  set_water_uniforms(render_state->shaders[ShaderId::OCEAN_COMMON].id(), render_state);
+  // (AI-assisted) the far ocean mesh is coarse: it only gets waves in its lighting, the surface
+  // doesn't move (moving it doesn't line up with the near ocean and leaves seams)
+  glUniform1i(glGetUniformLocation(render_state->shaders[ShaderId::OCEAN_COMMON].id(), "displace"),
+              0);
   glUniform4f(glGetUniformLocation(render_state->shaders[ShaderId::OCEAN_COMMON].id(), "fog_color"),
               render_state->fog_color[0] / 255.f, render_state->fog_color[1] / 255.f,
               render_state->fog_color[2] / 255.f, render_state->fog_intensity / 255);
