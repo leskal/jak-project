@@ -436,7 +436,7 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
           continue;
         }
         const float d = sn[nb].dot(sn[sl]);
-        if (std::abs(d) >= 0.5f) {
+        if (std::abs(d) >= 0.85f) {  // only neighbours facing almost the same way (~30 deg)
           sum += d < 0.f ? sn[nb] * -1.f : sn[nb];
         }
       }
@@ -492,7 +492,7 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
                 continue;
               }
               const float a = sn[nb].dot(sn[sl]);
-              if (std::abs(a) < 0.7f) {
+              if (std::abs(a) < 0.9f) {  // more than ~25 deg apart
                 continue;  // faces a different way: a real edge, not a seam
               }
               const float w = 1.f - d / kRadius;
@@ -553,7 +553,16 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
     const u32 sl = slot_of[i];
     const math::Vector3f& r = sn[sl];
     if (smooth_slot[sl] && std::abs(r.dot(n)) > 0.5f) {
-      n = r;  // smoothed, and pointing to the same side as its neighbours
+      // smoothed, and pointing to the same side as its neighbours. But never more than ~25 deg
+      // away from the point's own triangles: repeated smoothing near cliffs and rocks could
+      // otherwise tilt flat ground a lot.
+      math::Vector3f own_n = r.dot(n) < 0.f ? n * -1.f : n;
+      math::Vector3f m = r;
+      for (int k = 0; k < 4 && m.dot(own_n) < 0.906f; k++) {
+        m += own_n;
+        m = m * (1.f / m.length());
+      }
+      n = m;
     } else if (r.dot(n) < 0.f) {
       n = n * -1.f;  // edge point: keep its own direction, but on the same side
     }

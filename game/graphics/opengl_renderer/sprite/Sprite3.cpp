@@ -489,6 +489,7 @@ void Sprite3::render_jak1(DmaFollower& dma,
                           SharedRenderState* render_state,
                           ScopedProfilerNode& prof) {
   m_debug_stats = {};
+  m_flat_tex_class.clear();  // (AI-assisted) texture addresses can change between frames
   // First thing should be a NEXT with two nops. this is a jump from buckets to sprite data
   auto data0 = dma.read_and_advance();
   ASSERT(data0.vif1() == 0);
@@ -788,6 +789,26 @@ void Sprite3::handle_alpha(u64 val,
   update_mode_from_alpha1(val, m_current_mode);
 }
 
+// (AI-assisted) true if this flat particle uses the game's water ring / wave texture
+// (effects/water-ring, effects/water-wave). Cached by texture address; the cache is cleared every
+// frame (render_jak1) because the game reuses addresses for other textures.
+bool Sprite3::is_water_ring_texture(u32 sprite_idx, SharedRenderState* render_state) {
+  if (render_state->version != GameVersion::Jak1) {
+    return false;
+  }
+  GsTex0 tex_reg(m_adgif[sprite_idx].tex0_data);
+  const u32 tbp = tex_reg.tbp0();
+  auto it = m_flat_tex_class.find(tbp);
+  if (it == m_flat_tex_class.end()) {
+    const std::string tex_name = render_state->texture_pool->get_debug_texture_name_from_tbp(tbp);
+    const size_t slash = tex_name.rfind('/');
+    const std::string base = slash == std::string::npos ? tex_name : tex_name.substr(slash + 1);
+    const bool water = base == "water-ring" || base == "water-wave";
+    it = m_flat_tex_class.emplace(tbp, water ? 1 : 0).first;
+  }
+  return it->second == 1;
+}
+
 void Sprite3::do_block_common(SpriteMode mode,
                               u32 count,
                               SharedRenderState* render_state,
@@ -800,10 +821,11 @@ void Sprite3::do_block_common(SpriteMode mode,
 
     // (AI-assisted) point lights mod: additive ("glowing") particles are light sources.
     // Recorded before the off-screen culling below, so lights near the edge don't pop.
-    // Only camera-facing particles (fire, sparks, glows): flat "3D" sprites are things like the
-    // ripple rings on water, which shouldn't light anything.
-    if (mode == Mode2D && render_state->collect_particle_lights &&
-        render_state->particle_light_samples.size() < 8192) {
+    // Camera-facing and flat ("3D") particles both count, except the game's water ripple rings
+    // and wave lines (flat particles on the water), which shouldn't light anything.
+    if (mode != ModeHUD && render_state->collect_particle_lights &&
+        render_state->particle_light_samples.size() < 8192 &&
+        !(mode == Mode3D && is_water_ring_texture(sprite_idx, render_state))) {
       GsAlpha reg(m_adgif[sprite_idx].alpha_data);
       const bool additive = reg.a_mode() == GsAlpha::BlendMode::SOURCE &&
                             reg.b_mode() == GsAlpha::BlendMode::ZERO_OR_FIXED &&
@@ -823,39 +845,6 @@ void Sprite3::do_block_common(SpriteMode mode,
           render_state->particle_light_samples.push_back(
               {v.xyz_sx.x(), v.xyz_sx.y(), v.xyz_sx.z(), {r * w, g * w, b * w}});
         }
-      }
-    }
-
-    // (AI-assisted) the game draws its water ripple rings as flat ("3D") particles with a ring
-    // texture. The lighting mod makes real ripples, so these can be hidden.
-    if (mode == Mode3D && render_state->version == GameVersion::Jak1) {
-      GsTex0 tex_reg(m_adgif[sprite_idx].tex0_data);
-      static std::unordered_map<u32, int> ripple_tex_cache;  // tbp -> 1 if a ripple texture
-      if (ripple_tex_cache.size() > 1024) {
-        ripple_tex_cache.clear();
-      }
-      const u32 tbp = tex_reg.tbp0();
-      auto it = ripple_tex_cache.find(tbp);
-      if (it == ripple_tex_cache.end()) {
-        const std::string tex_name =
-            render_state->texture_pool->get_debug_texture_name_from_tbp(tbp);
-        // effects/water-ring = rings around Jak, effects/water-wave = wave lines on the water
-        const bool is_ripple = tex_name.find("water-ring") != std::string::npos ||
-                               tex_name.find("water-wave") != std::string::npos ||
-                               tex_name.find("ripple") != std::string::npos ||
-                               tex_name.find("wake") != std::string::npos;
-        // effects/lakedrop, effects/water-splash = bubbles / drops on the water
-        const bool is_bubble = tex_name.find("lakedrop") != std::string::npos ||
-                               tex_name.find("water-splash") != std::string::npos;
-        it = ripple_tex_cache.emplace(tbp, is_ripple ? 1 : (is_bubble ? 2 : 0)).first;
-        if (render_state->seen_flat_particle_textures.size() < 2000 &&
-            render_state->seen_flat_particle_textures.find(tex_name) == std::string::npos) {
-          render_state->seen_flat_particle_textures += tex_name + "  ";
-        }
-      }
-      if ((it->second == 1 && render_state->relight.hide_game_ripples) ||
-          (it->second == 2 && render_state->relight.hide_game_bubbles)) {
-        continue;
       }
     }
 

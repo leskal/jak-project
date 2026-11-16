@@ -260,6 +260,42 @@ float pl_shadow(int i, vec3 wp, vec3 N, float d) {
   return s * 0.25;
 }
 
+// (AI-assisted) Jak's soft shadow from point lights (spheres on his joints, see Merc2.cpp);
+// same as in the level shaders. Not on Jak / Daxter themselves (pl_occ_self).
+uniform int pl_occ_count;
+uniform vec4 pl_occ[24];
+uniform vec4 pl_occ_bound;
+uniform int pl_occ_debug;
+uniform int pl_occ_self;
+
+float pl_occ_shadow(vec3 wp, vec3 L, float d) {
+  if (pl_occ_count <= 0 || pl_occ_self == 1) {
+    return 1.0;
+  }
+  vec3 oc = wp - pl_occ_bound.xyz;
+  float b = dot(oc, L);
+  float c = dot(oc, oc) - pl_occ_bound.w * pl_occ_bound.w;
+  if (c > 0.0 && (b > 0.0 || b * b - c < 0.0)) {
+    return 1.0;
+  }
+  const float light_r = 0.3 * 4096.0;
+  float vis = 1.0;
+  for (int k = 0; k < pl_occ_count; k++) {
+    vec4 s = pl_occ[k];
+    vec3 o = wp - s.xyz;
+    float t = -dot(o, L);
+    if (t <= 0.0 || t >= d) {
+      continue;
+    }
+    float axis = sqrt(max(dot(o, o) - t * t, 0.0));
+    float w = light_r * t / d + 80.0;
+    float occ = 1.0 - smoothstep(s.w - w, s.w + w, axis);
+    occ *= min(1.0, (s.w * s.w) / (w * w));
+    vis = min(vis, 1.0 - occ);
+  }
+  return vis;
+}
+
 vec3 point_lights(vec3 wp, vec3 N) {
   vec3 sum = vec3(0.0);
   for (int i = 0; i < pl_count; i++) {
@@ -271,7 +307,11 @@ vec3 point_lights(vec3 wp, vec3 N) {
     }
     float d = sqrt(d2);
     L /= max(d, 1.0);
-    float ndl = max(dot(N, L), 0.0) * pl_shadow(i, wp, N, d);
+    float occ_vis = pl_occ_shadow(wp, L, d);
+    float ndl = max(dot(N, L), 0.0) * pl_shadow(i, wp, N, d) * occ_vis;
+    if (pl_occ_debug == 1) {
+      sum += vec3(4.0, 0.0, 0.0) * (1.0 - occ_vis);  // (AI-assisted) debug: Jak's shadow in red
+    }
     float x = d2 / (R * R);
     float window = (1.0 - x * x);
     window *= window;

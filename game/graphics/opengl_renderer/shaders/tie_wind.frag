@@ -159,6 +159,44 @@ float pl_shadow(int i, vec3 wp, vec3 N, float d) {
   return s * 0.25;
 }
 
+// (AI-assisted) Jak's soft shadow from point lights: he is a set of spheres on his joints.
+// For the path from this point to the light, each sphere blocks the part of the light it covers:
+// the light is a small ball (~0.3 m), so the shadow edge gets softer the further the surface is
+// from Jak, like the shadow of a real fire.
+uniform int pl_occ_count;
+uniform vec4 pl_occ[24];      // xyz = world position, w = radius (game units)
+uniform vec4 pl_occ_bound;    // one sphere around all of them
+uniform int pl_occ_debug;     // 1: paint where Jak blocks a light red
+
+float pl_occ_shadow(vec3 wp, vec3 L, float d) {
+  if (pl_occ_count <= 0) {
+    return 1.0;
+  }
+  // quick test: does the path to the light pass Jak at all?
+  vec3 oc = wp - pl_occ_bound.xyz;
+  float b = dot(oc, L);
+  float c = dot(oc, oc) - pl_occ_bound.w * pl_occ_bound.w;
+  if (c > 0.0 && (b > 0.0 || b * b - c < 0.0)) {
+    return 1.0;
+  }
+  const float light_r = 0.3 * 4096.0;
+  float vis = 1.0;
+  for (int k = 0; k < pl_occ_count; k++) {
+    vec4 s = pl_occ[k];
+    vec3 o = wp - s.xyz;
+    float t = -dot(o, L);  // distance along the path to the sphere
+    if (t <= 0.0 || t >= d) {
+      continue;  // behind the surface, or beyond the light
+    }
+    float axis = sqrt(max(dot(o, o) - t * t, 0.0));
+    float w = light_r * t / d + 80.0;  // size of the light as seen at the sphere
+    float occ = 1.0 - smoothstep(s.w - w, s.w + w, axis);
+    occ *= min(1.0, (s.w * s.w) / (w * w));  // a small sphere can't hide a big light completely
+    vis = min(vis, 1.0 - occ);
+  }
+  return vis;
+}
+
 vec3 point_lights(vec3 wp, vec3 N) {
   vec3 sum = vec3(0.0);
   for (int i = 0; i < pl_count; i++) {
@@ -170,7 +208,11 @@ vec3 point_lights(vec3 wp, vec3 N) {
     }
     float d = sqrt(d2);
     L /= max(d, 1.0);
-    float ndl = max(dot(N, L), 0.0) * pl_shadow(i, wp, N, d);
+    float occ_vis = pl_occ_shadow(wp, L, d);
+    float ndl = max(dot(N, L), 0.0) * pl_shadow(i, wp, N, d) * occ_vis;
+    if (pl_occ_debug == 1) {
+      sum += vec3(4.0, 0.0, 0.0) * (1.0 - occ_vis);  // (AI-assisted) debug: Jak's shadow in red
+    }
     // smooth end of the light's reach
     float x = d2 / (R * R);
     float window = (1.0 - x * x);
@@ -227,7 +269,12 @@ void main() {
       if (dot(F, view_dir) > 0.0) {
         F = -F;
       }
-      N = normalize(mix(F, N, smoothstep(0.0, 0.35, dot(N, F))));
+      // flat ground (the triangle faces almost straight up): the smooth normal may only differ a
+      // little from the triangle's own direction. Edges of raised patches (a tiny vertical side)
+      // otherwise pull the corners sideways and draw light lines on the ground.
+      float flat_ground = smoothstep(0.85, 0.95, abs(F.y));
+      float keep = mix(smoothstep(0.0, 0.35, dot(N, F)), smoothstep(0.85, 0.95, dot(N, F)), flat_ground);
+      N = normalize(mix(F, N, keep));
     }
     // plants: lean the normal towards "up" so leaves and grass are lit softly like a canopy
     N = normalize(N + vec3(0.0, 0.6, 0.0));

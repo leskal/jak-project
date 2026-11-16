@@ -2,6 +2,7 @@
 #pragma once
 
 #include <map>
+#include <unordered_map>
 
 #include "common/dma/gs.h"
 #include "common/math/Vector.h"
@@ -208,6 +209,9 @@ class Sprite3 : public BucketRenderer {
   Bucket* m_last_bucket = nullptr;
 
   u64 m_sprite_idx = 0;
+  // (AI-assisted) water ring texture check for point lights, by tbp, cleared every frame
+  std::unordered_map<u32, int> m_flat_tex_class;
+  bool is_water_ring_texture(u32 sprite_idx, SharedRenderState* render_state);
 
   std::vector<u32> m_index_buffer_data;
 };

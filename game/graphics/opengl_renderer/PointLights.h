@@ -20,10 +20,12 @@ class PointLights {
 
   // --- settings ---
   bool enabled = true;
-  float strength = 1.f;           // overall brightness of the lights
-  float cluster_size_m = 1.5f;    // particles closer than this become one light
-  float max_radius_m = 10.f;      // lights never reach further than this
+  float strength = 4.03f;         // overall brightness of the lights (AI-assisted: tuned default)
+  float cluster_size_m = 3.65f;   // particles closer than this become one light (tuned)
+  float max_radius_m = 18.17f;    // lights never reach further than this (tuned)
   int max_lights = 16;
+  bool jak_shadows = true;        // (AI-assisted) Jak casts soft shadows from point lights
+  float flicker = 0.35f;          // (AI-assisted) how much fire-colored lights flicker (0 = steady)
 
  private:
   struct Tracked {
@@ -31,10 +33,20 @@ class PointLights {
     float color[3];
     float fade;    // 0..1, for smooth appearing / disappearing
     bool matched;
+    float seed;    // (AI-assisted) random phase for the flicker
   };
   std::vector<Tracked> m_tracked;
   std::chrono::steady_clock::time_point m_last_time;
   bool m_have_time = false;
+  float m_time = 0.f;  // (AI-assisted) seconds, for the flicker
+  // (AI-assisted) debug for Jak's shadows
+  bool m_occ_debug = false;
+  int m_occ_count = 0;
+  int m_occ_age = 0;
+  float m_occ_size_m = 0.f;
+  bool m_strongest_valid = false;
+  float m_strongest_dist_m = 0.f;
+  float m_strongest_height_m = 0.f;
   int m_last_samples = 0;
   int m_last_lights = 0;
 };

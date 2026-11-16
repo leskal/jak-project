@@ -1,6 +1,7 @@
 #include "Merc2.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -564,6 +565,7 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
   // from the body), and put the feet ~0.75 m below the middle of the body.
   if (is_jak && i > 0 && render_state->version == GameVersion::Jak1) {
     std::vector<float> bx, by, bz;
+    std::vector<std::array<float, 3>> pts;  // (AI-assisted) same, kept in order
     bx.reserve(i);
     by.reserve(i);
     bz.reserve(i);
@@ -580,6 +582,7 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
       bx.push_back(w[0]);
       by.push_back(w[1]);
       bz.push_back(w[2]);
+      pts.push_back({w[0], w[1], w[2]});
     }
     if (!bx.empty()) {
       auto median = [](std::vector<float>& v) {
@@ -592,6 +595,51 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
       rl.jak_pos_m[2] = median(bz) / 4096.f;
       rl.jak_feet_m = rl.jak_pos_m[1] - 0.75f;
       rl.jak_valid = true;
+
+      // (AI-assisted) Jak as spheres on his joints, for his soft shadows from point lights:
+      // bigger around the body, smaller on arms and legs. Helper bones far from the body and
+      // joints very close to one already used are skipped.
+      const float m = 4096.f;
+      const float c[3] = {rl.jak_pos_m[0] * m, rl.jak_pos_m[1] * m, rl.jak_pos_m[2] * m};
+      int n = 0;
+      float bound_r = 0.f;
+      for (const auto& p : pts) {
+        if (n >= rl.kJakOcc) {
+          break;
+        }
+        const float dx = p[0] - c[0], dy = p[1] - c[1], dz = p[2] - c[2];
+        if (dx * dx + dy * dy + dz * dz > (1.3f * m) * (1.3f * m)) {
+          continue;
+        }
+        bool close = false;
+        for (int k = 0; k < n && !close; k++) {
+          const float ex = rl.jak_occ[k * 4] - p[0], ey = rl.jak_occ[k * 4 + 1] - p[1],
+                      ez = rl.jak_occ[k * 4 + 2] - p[2];
+          close = ex * ex + ey * ey + ez * ez < (0.1f * m) * (0.1f * m);
+        }
+        if (close) {
+          continue;
+        }
+        const float horiz = std::sqrt(dx * dx + dz * dz);
+        float r = 0.12f;  // arms, legs
+        if (horiz < 0.15f * m && dy > -0.3f * m && dy < 0.5f * m) {
+          r = 0.2f;  // body
+        } else if (dy >= 0.5f * m) {
+          r = 0.15f;  // head
+        }
+        rl.jak_occ[n * 4 + 0] = p[0];
+        rl.jak_occ[n * 4 + 1] = p[1];
+        rl.jak_occ[n * 4 + 2] = p[2];
+        rl.jak_occ[n * 4 + 3] = r * m;
+        bound_r = std::max(bound_r, std::sqrt(dx * dx + dy * dy + dz * dz) + r * m);
+        n++;
+      }
+      rl.jak_occ_count = n;
+      rl.jak_occ_bound[0] = c[0];
+      rl.jak_occ_bound[1] = c[1];
+      rl.jak_occ_bound[2] = c[2];
+      rl.jak_occ_bound[3] = bound_r;
+      rl.jak_occ_age = 0;
     }
   }
 
@@ -702,6 +750,8 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
   args.water_waves = render_state->version == GameVersion::Jak1 &&
                      strncmp(name, "water-anim", 10) == 0 && !strstr(name, "lava") &&
                      !strstr(name, "mud") && !strstr(name, "dark-eco");
+  // (AI-assisted) Jak's sphere shadow shouldn't fall on Jak himself or on Daxter
+  args.no_jak_shadow = is_jak || strncmp(name, "sidekick", 8) == 0;
   args.disable_fog = model_disables_fog;
   args.hash = hash;
   args.lights = lights;
@@ -1193,6 +1243,9 @@ Merc2::Draw* Merc2::alloc_normal_draw(const tfrag3::MercDraw& mdraw, const DrawA
   if (args.water_waves) {
     draw->flags |= WATER_WAVES;
   }
+  if (args.no_jak_shadow) {
+    draw->flags |= NO_JAK_SHADOW;
+  }
   for (int i = 0; i < 4; i++) {
     draw->fade[i] = 0;
   }
@@ -1378,6 +1431,16 @@ void Merc2::flush_draw_buckets(SharedRenderState* render_state,
                      render_state->point_lights.pos_radius);
         glUniform4fv(glGetUniformLocation(mid, "pl_color"), render_state->point_lights.count,
                      render_state->point_lights.color);
+        // (AI-assisted) Jak's shadows from point lights (spheres, see handle_pc_model)
+        {
+          const bool occ_on = rl.jak_pl_shadows && rl.jak_occ_age <= 3 && rl.jak_occ_count > 0;
+          glUniform1i(glGetUniformLocation(mid, "pl_occ_count"), occ_on ? rl.jak_occ_count : 0);
+          glUniform1i(glGetUniformLocation(mid, "pl_occ_debug"), rl.jak_occ_debug ? 1 : 0);
+          if (occ_on) {
+            glUniform4fv(glGetUniformLocation(mid, "pl_occ"), rl.jak_occ_count, rl.jak_occ);
+            glUniform4fv(glGetUniformLocation(mid, "pl_occ_bound"), 1, rl.jak_occ_bound);
+          }
+        }
         // (AI-assisted) point light shadows, unit 9
         glUniform1i(glGetUniformLocation(mid, "pl_shadow_tex"), 9);
         glUniform1i(glGetUniformLocation(mid, "pl_shadows_on"), rl.pl_shadow_valid ? 1 : 0);
@@ -1459,6 +1522,8 @@ void Merc2::do_draws(const Draw* draw_array,
   glGetIntegerv(GL_CURRENT_PROGRAM, &current_program);
   const GLint is_water_loc = glGetUniformLocation(current_program, "is_water");
   int last_water = -1;
+  const GLint occ_self_loc = glGetUniformLocation(current_program, "pl_occ_self");
+  int last_occ_self = -1;
 
   for (u32 di = 0; di < num_draws; di++) {
     auto& draw = draw_array[di];
@@ -1467,6 +1532,13 @@ void Merc2::do_draws(const Draw* draw_array,
       if (w != last_water) {
         glUniform1i(is_water_loc, w);
         last_water = w;
+      }
+    }
+    if (occ_self_loc >= 0) {
+      const int o = (draw.flags & NO_JAK_SHADOW) ? 1 : 0;
+      if (o != last_occ_self) {
+        glUniform1i(occ_self_loc, o);
+        last_occ_self = o;
       }
     }
     if (draw.flags & MOD_VTX) {

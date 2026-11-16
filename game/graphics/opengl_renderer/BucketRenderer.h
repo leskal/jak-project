@@ -74,8 +74,6 @@ struct SharedRenderState {
     float color[3];    // color * alpha * area (m^2): how much light it gives
   };
   bool collect_particle_lights = false;
-  // (AI-assisted) names of the flat ("3D") particle textures drawn this frame (debug display)
-  std::string seen_flat_particle_textures;
   std::vector<ParticleLightSample> particle_light_samples;
   // point lights for the shaders (filled by PointLights each frame)
   struct PointLightsGpu {
@@ -108,13 +106,20 @@ struct SharedRenderState {
     float water_reflect = 1.f;    // sky reflection
     float water_spec = 1.f;       // sun glints
     bool water_wakes = true;      // ripples spreading from Jak in water
-    bool hide_game_ripples = true;  // hide the game's flat white ring pictures on water
-    bool hide_game_bubbles = true;  // hide the game's bubbles / drops on water
     float wake_strength = 1.f;
     // (runtime) where Jak is, from his model (meters, world)
     bool jak_valid = false;
     float jak_pos_m[3] = {0, 0, 0};
     float jak_feet_m = 0.f;
+    // (AI-assisted) Jak as spheres on his joints (world, game units; w = radius), for his
+    // shadows from point lights (from the last frame he was drawn)
+    static constexpr int kJakOcc = 24;
+    int jak_occ_count = 0;
+    float jak_occ[kJakOcc * 4] = {};
+    float jak_occ_bound[4] = {};  // one sphere around all of them
+    int jak_occ_age = 100;        // frames since Jak was last drawn
+    bool jak_pl_shadows = true;   // setting (PointLights): Jak casts shadows from point lights
+    bool jak_occ_debug = false;   // debug: paint where Jak blocks a point light red
     // (AI-assisted) auto exposure: measures the screen and adapts, like a camera / your eyes
     bool auto_exposure = true;
     float auto_exposure_amount = 0.8f;   // 0 = none, 1 = always reach the target

@@ -1250,15 +1250,6 @@ void OpenGLRenderer::draw_renderer_selection_window() {
         } else {
           ImGui::Text("Jak not found yet (wakes need his position)");
         }
-        ImGui::Checkbox("Hide the game's ripple rings", &rl.hide_game_ripples);
-        ImGui::Checkbox("Hide the game's water bubbles", &rl.hide_game_bubbles);
-        if (ImGui::TreeNode("Flat particle textures (debug)")) {
-          ImGui::TextWrapped("%s", m_render_state.seen_flat_particle_textures.c_str());
-          if (ImGui::Button("Clear list")) {
-            m_render_state.seen_flat_particle_textures.clear();
-          }
-          ImGui::TreePop();
-        }
       }
       ImGui::Checkbox("Auto exposure (measures the screen, like a camera)", &rl.auto_exposure);
       if (rl.auto_exposure) {

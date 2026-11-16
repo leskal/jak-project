@@ -179,6 +179,7 @@ class Merc2 {
     MOD_VTX = 2,
     NO_TEXTURE = 4,
     WATER_WAVES = 8,  // (AI-assisted) water surface: ripples, reflections, glints
+    NO_JAK_SHADOW = 16,  // (AI-assisted) Jak / Daxter: don't receive Jak's point light shadow
   };
 
   struct Draw {
@@ -219,6 +220,7 @@ class Merc2 {
     bool disable_fog;
     bool no_texture;
     bool water_waves;  // (AI-assisted)
+    bool no_jak_shadow;  // (AI-assisted)
     u64 hash;
     u32 lights;
     u32 first_bone;

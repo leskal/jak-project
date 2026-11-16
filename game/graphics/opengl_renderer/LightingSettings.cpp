@@ -80,8 +80,6 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "water_reflect", rl.water_reflect);
     get_if(r, "water_spec", rl.water_spec);
     get_if(r, "water_wakes", rl.water_wakes);
-    get_if(r, "hide_game_ripples", rl.hide_game_ripples);
-    get_if(r, "hide_game_bubbles", rl.hide_game_bubbles);
     get_if(r, "wake_strength", rl.wake_strength);
     get_if(r, "auto_exposure_amount", rl.auto_exposure_amount);
     get_if(r, "auto_exposure_target", rl.auto_exposure_target);
@@ -141,6 +139,8 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(p, "cluster_size_m", lights.cluster_size_m);
     get_if(p, "max_radius_m", lights.max_radius_m);
     get_if(p, "max_lights", lights.max_lights);
+    get_if(p, "flicker", lights.flicker);
+    get_if(p, "jak_shadows", lights.jak_shadows);
   }
   lg::info("lighting settings: loaded {}", path);
   return true;
@@ -189,8 +189,6 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"water_reflect", rl.water_reflect},
                   {"water_spec", rl.water_spec},
                   {"water_wakes", rl.water_wakes},
-                  {"hide_game_ripples", rl.hide_game_ripples},
-                  {"hide_game_bubbles", rl.hide_game_bubbles},
                   {"wake_strength", rl.wake_strength},
                   {"auto_exposure_amount", rl.auto_exposure_amount},
                   {"auto_exposure_target", rl.auto_exposure_target},
@@ -227,7 +225,9 @@ bool lighting_settings_save(const SSAO& ssao,
                        {"strength", lights.strength},
                        {"cluster_size_m", lights.cluster_size_m},
                        {"max_radius_m", lights.max_radius_m},
-                       {"max_lights", lights.max_lights}};
+                       {"max_lights", lights.max_lights},
+                       {"flicker", lights.flicker},
+                       {"jak_shadows", lights.jak_shadows}};
   const auto path = lighting_settings_path();
   try {
     file_util::create_dir_if_needed_for_file(path);

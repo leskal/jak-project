@@ -331,6 +331,17 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
       glUniform4fv(glGetUniformLocation(id, "pl_color"), render_state->point_lights.count,
                    render_state->point_lights.color);
     }
+    // (AI-assisted) Jak's shadows from point lights (spheres on his joints, see Merc2)
+    {
+      const bool occ_on = rl.jak_pl_shadows && rl.jak_occ_age <= 3 && rl.jak_occ_count > 0 &&
+                          render_state->point_lights.count > 0;
+      glUniform1i(glGetUniformLocation(id, "pl_occ_count"), occ_on ? rl.jak_occ_count : 0);
+      glUniform1i(glGetUniformLocation(id, "pl_occ_debug"), rl.jak_occ_debug ? 1 : 0);
+      if (occ_on) {
+        glUniform4fv(glGetUniformLocation(id, "pl_occ"), rl.jak_occ_count, rl.jak_occ);
+        glUniform4fv(glGetUniformLocation(id, "pl_occ_bound"), 1, rl.jak_occ_bound);
+      }
+    }
     // (AI-assisted) point light shadows, always on unit 9
     glUniform1i(glGetUniformLocation(id, "pl_shadow_tex"), 9);
     glUniform1i(glGetUniformLocation(id, "pl_shadows_on"), rl.pl_shadow_valid ? 1 : 0);
