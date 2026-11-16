@@ -91,6 +91,12 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "wet_dark", rl.wet_dark);
     get_if(r, "water_absorb", rl.water_absorb);
     get_if(r, "water_refract", rl.water_refract);
+    get_if(r, "sky_gradient", rl.sky_gradient);  // (AI-assisted)
+    get_if(r, "wave_light", rl.wave_light);
+    get_if(r, "crest_foam", rl.crest_foam);
+    get_if(r, "hex_tiling", rl.hex_tiling);
+    get_if(r, "lake_waves", rl.lake_waves);
+    get_if(r, "wet_mud", rl.wet_mud);
     get_if(r, "bloom_on", rl.bloom_on);
     get_if(r, "bloom_threshold", rl.bloom_threshold);
     get_if(r, "bloom_strength", rl.bloom_strength);
@@ -216,6 +222,12 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"wet_dark", rl.wet_dark},
                   {"water_absorb", rl.water_absorb},
                   {"water_refract", rl.water_refract},
+                  {"sky_gradient", rl.sky_gradient},  // (AI-assisted)
+                  {"wave_light", rl.wave_light},
+                  {"crest_foam", rl.crest_foam},
+                  {"hex_tiling", rl.hex_tiling},
+                  {"lake_waves", rl.lake_waves},
+                  {"wet_mud", rl.wet_mud},
                   {"bloom_on", rl.bloom_on},
                   {"bloom_threshold", rl.bloom_threshold},
                   {"bloom_strength", rl.bloom_strength},

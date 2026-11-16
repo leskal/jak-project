@@ -137,6 +137,13 @@ struct SharedRenderState {
     bool scene_color_valid = false;
     float water_absorb = 1.f;     // colour absorption, 1 = 0.03 per metre (red 1.6, green 0.9, blue 0.5)
     float water_refract = 1.f;    // how much the waves bend what is under the water
+    // (AI-assisted) ported from Project Sandover (ISC licence)
+    float sky_gradient = 0.6f;    // reflection: 0 = flat fog colour, 1 = sky gradient + sun glow
+    float wave_light = 1.f;       // light through wave tops, lighter crests, darker troughs
+    float crest_foam = 0.8f;      // foam where the sea's waves bunch up
+    float hex_tiling = 1.f;       // hide the repeat of the sea texture
+    bool lake_waves = true;       // small, slow waves on the sunken city's water
+    bool wet_mud = true;          // Misty's quicksand looks like wet mud
     // (runtime) where Jak is, from his model (meters, world)
     bool jak_valid = false;
     float jak_pos_m[3] = {0, 0, 0};

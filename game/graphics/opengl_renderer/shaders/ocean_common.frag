@@ -159,18 +159,62 @@ float sea_shadow(vec3 wp) {
   return 1.0;
 }
 
+// (AI-assisted) ported from Project Sandover (ISC licence, github.com/bouzou4/project-sandover):
+// the sky in the reflection, light through the wave tops, and lighter crests / darker troughs.
+// Their numbers: sky 0.6, haze 400 m, subsurface 0.6, crest light 0.5.
+uniform float sky_gradient;  // 0 = the flat fog colour (before), 1 = sky gradient with sun glow
+uniform float wave_light;    // 1 = Sandover's subsurface and crest light
+float g_wave_h = 0.0;        // wave height here: about -1 (trough) .. 1 (crest)
+float g_sky = 1.0;           // 0 = no sky above (caves, the sunken city): no sky, no sun
+
+float water_lum(vec3 c) {
+  return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+// what the water reflects: the horizon colour low down, a deeper and bluer sky higher up (at the
+// same brightness as the fog colour, the game's horizon), a glow around the sun, hazing back
+// into the fog colour with distance
+vec3 sky_reflection(vec3 N, vec3 V, float dist_m) {
+  vec3 hor = fog_color.rgb * 1.1;
+  if (sky_gradient <= 0.0) {
+    return hor;
+  }
+  vec3 R = reflect(-V, N);
+  float l = water_lum(hor);
+  vec3 zen = mix(hor * 0.8, vec3(0.55, 0.75, 1.0) * l * 1.1, 0.5);
+  vec3 e = mix(hor, zen, smoothstep(0.0, 0.48, max(R.y, 0.0)));
+  vec3 L = normalize(sun_dir);
+  float glow = pow(max(dot(R, L), 0.0), 24.0) * smoothstep(-0.05, 0.1, L.y);
+  e += min(sun_color, vec3(1.5)) * glow * 0.6 * glint_vis;
+  e = min(e, vec3(0.97));
+  e = mix(e, hor, 1.0 - exp(-dist_m / 400.0));
+  return mix(hor, e, sky_gradient);
+}
+
 // light the water surface: sky reflection (stronger at grazing angles) and sun glints
-vec3 water_shade(vec3 base, vec3 N, vec3 V, vec3 sky_refl) {
+vec3 water_shade(vec3 base, vec3 N, vec3 V, float dist_m) {
   float ndv = max(dot(N, V), 0.0);
   float F = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
   vec3 L = normalize(sun_dir);
+  float up = smoothstep(0.0, 0.12, L.y) * g_sky;
   // the water's own color: a bit brighter where the waves face the sun
-  vec3 col = base * (0.88 + 0.24 * clamp(dot(N, L) * 0.5 + 0.5, 0.0, 1.0));
-  col = mix(col, sky_refl, clamp(F * water_reflect, 0.0, 1.0));
+  vec3 col = base * mix(1.0, 0.88 + 0.24 * clamp(dot(N, L) * 0.5 + 0.5, 0.0, 1.0), g_sky);
+  // crests a little lighter, troughs a little darker
+  col *= 1.0 + 0.5 * wave_light * clamp(g_wave_h, -1.0, 1.0) * 0.5;
+  // light through the wave tops, strongest looking toward the sun
+  float back = pow(max(dot(-V, L), 0.0), 3.0) * up * glint_vis;
+  float sss = 0.6 * wave_light * max(g_wave_h, 0.0) * (0.35 + 1.4 * back) * max(up, 0.3 * g_sky);
+  float lum = water_lum(base);
+  vec3 shallow_col = min(mix(vec3(lum), base, 1.25) * 1.9 + 0.02, vec3(0.95));
+  col += shallow_col * min(sun_color, vec3(1.5)) * sss * 0.6;
+  if (g_sky > 0.5) {
+    // no sky above: nothing reflected here (the game's own reflection layer stays)
+    col = mix(col, sky_reflection(N, V, dist_m), clamp(F * water_reflect, 0.0, 1.0));
+  }
   vec3 H = normalize(L + V);
   float spec = pow(max(dot(N, H), 0.0), 350.0) * 25.0;
   if (L.y > 0.0) {
-    col += sun_color * spec * water_spec * 0.25 * glint_vis;  // (AI-assisted) none in shade
+    col += sun_color * spec * water_spec * 0.25 * glint_vis * g_sky;  // (AI-assisted) none in shade
   }
   return col;
 }
@@ -267,6 +311,44 @@ vec3 ocean_body(vec3 base, vec3 wp, vec3 N, float dist_m) {
   return texelFetch(scene_color, px, 0).rgb * T + base * (1.0 - T);
 }
 
+// (AI-assisted) after Project Sandover (ISC licence): x = wave height (m), y = how much the waves
+// bunch up here (1 = flat water, lower on sharp crests; their Gerstner "Jacobian", worked out
+// from our waves' curvature). s scales the wave field (the lake set).
+vec2 wave_crest_info(vec2 p, float t, float amp, float fp, float s) {
+  vec2 r = vec2(0.0, 1.0);
+  for (int i = 0; i < NUM_WAVES; i++) {
+    float k = 6.2831853 / WAVE_LEN[i];
+    float w = sqrt(9.81 * k);
+    float ph = k * dot(WAVE_DIR[i], p) - w * t + WAVE_PHASE[i];
+    float a = amp * WAVE_AMP[i];
+    r.x += a * sin(ph);
+    r.y -= 2.5 * a * k * s * sin(ph) * wave_aa(WAVE_LEN[i], fp);  // fp in the same scaled units
+  }
+  return r;
+}
+
+// (AI-assisted) foam where the sea's waves bunch up, cut from a drifting noise (Sandover's
+// crest foam: threshold 0.9, none in the first metres or far away)
+uniform float crest_foam;
+float crest_foam_mask(vec2 p, float J, float h, float dist_m, float fp) {
+  if (crest_foam <= 0.0) {
+    return 0.0;
+  }
+  float c = (1.0 - smoothstep(0.65, 0.9, J)) * smoothstep(0.2, 0.7, h);
+  c *= smoothstep(1.5, 6.0, dist_m) * (1.0 - smoothstep(80.0, 200.0, dist_m));
+  float t = wave_time;
+  vec3 a = vec3(0.55, 0.3, 0.15) *
+           vec3(wave_aa(1.0 / 2.3, fp), wave_aa(1.0 / 5.9, fp), wave_aa(1.0 / 13.1, fp));
+  float n = 0.5 + a.x * rip_noise(p * 2.3 + vec2(0.13, 0.07) * t).x * 1.4 +
+            a.y * rip_noise(p * 5.9 - vec2(0.05, 0.11) * t).x * 1.4 +
+            a.z * rip_noise(p * 13.1 + vec2(0.09, -0.04) * t).x * 1.4;
+  float cc = 1.0 - 0.6 * c;
+  float aa = 0.5 * fwidth(n - cc);
+  return crest_foam * smoothstep(cc - aa, cc + 0.06 + aa, n);
+}
+
+uniform int wave_lake;  // (AI-assisted) 1 = the sunken city: small, slow waves (Sandover's lake set)
+
 vec3 ocean_waves(vec3 base) {
   vec3 wp = frag_world();
   float dist_m = length(wp - cam_trans) / 4096.0;
@@ -277,7 +359,18 @@ vec3 ocean_waves(vec3 base) {
   // (worked out from distance and angle, not from screen derivatives, which jump at the edges
   // of the water's triangles and drew lines)
   float fp = dist_m * (2.0 / viewport.w) / max(abs(V.y), 0.08);
-  vec2 slope = wave_slope_aa(p, wave_time, amp, fp);
+  // (AI-assisted) the lake set: waves about 4.5x shorter and 5x lower, at their own speed, and
+  // no sky above
+  float ws = 1.0;
+  if (wave_lake == 1) {
+    ws = 4.5;
+    amp *= 0.18;
+    g_sky = 0.0;
+  }
+  vec2 slope = ws * wave_slope_aa(p * ws, wave_time * sqrt(ws), amp, fp * ws);
+  vec2 hj = wave_crest_info(p * ws, wave_time * sqrt(ws), amp, fp * ws, ws);
+  g_wave_h = hj.x / max(amp * 0.65, 1e-3);
+  float cfoam = wave_lake == 1 ? 0.0 : crest_foam_mask(p, hj.y, g_wave_h, dist_m, fp);
   slope += ripple_slope(p, wave_time, fp) * ripple_strength;
   vec3 wake = wake_field(wp / 4096.0, wave_time, fp);
   slope += wake.yz;
@@ -289,9 +382,14 @@ vec3 ocean_waves(vec3 base) {
     body = ocean_body(base, wp, N, dist_m);
     g_full = true;
   }
-  vec3 col = water_shade(body, N, V, fog_color.rgb * 1.1);
+  vec3 col = water_shade(body, N, V, dist_m);
   // (AI-assisted) wake crests: a soft light line (tiny foam / bright sky catching the crest)
   col += fog_color.rgb * clamp(wake.x * 5.0, 0.0, 0.3);
+  // (AI-assisted) crest foam: bright but never glowing (Sandover's foam colour)
+  vec3 L = normalize(sun_dir);
+  float fl = 0.75 + 0.25 * max(dot(N, L), 0.0) * smoothstep(0.0, 0.12, L.y) * glint_vis;
+  vec3 foam_col = vec3(0.93, 0.96, 0.97) * clamp(water_lum(base) * 3.5, 0.4, 1.0) * fl;
+  col = mix(col, foam_col, clamp(cfoam, 0.0, 1.0));
   return col;
 }
 
@@ -371,8 +469,50 @@ void ocean_shore(inout vec4 col, bool alpha_pass) {
   col.a = max(col.a, foam * 0.7);
 }
 
+// (AI-assisted) hex tiling, copied from Project Sandover (ISC licence; after Mikkelsen 2022):
+// the sea texture (one repeat every 96 m) is read three times, each rotated and offset by a
+// random amount per corner of a 56 m triangle grid in world space, and blended, so the repeat
+// no longer lines up into a grid when seen from high up
+uniform float hex_tiling;  // 0 = the game's texture coordinates, 1 = hex tiling only
+
+float hex_hash(vec2 p) {
+  uvec2 q = uvec2(ivec2(p)) * uvec2(1597334673u, 3812015801u);
+  return float((q.x ^ q.y) * 1597334673u) * (1. / 4294967295.);
+}
+
+vec4 ocean_tex() {
+  vec4 t = texture(tex_T0, tex_coord.xy / tex_coord.z);
+  if (hex_tiling <= 0.0 || waves_on == 0 || !(bucket == 0 || bucket == 1 || bucket == 3)) {
+    return t;
+  }
+  vec2 xz = frag_world().xz / 4096.0;
+  vec2 huv = xz * (1.0 / 96.0);
+  vec2 hdx = dFdx(huv);
+  vec2 hdy = dFdy(huv);
+  vec2 s = xz * (1.0 / 56.0);
+  vec2 k = vec2(s.x - 0.57735027 * s.y, 1.15470054 * s.y);
+  vec2 b = floor(k);
+  vec2 f = k - b;
+  float z = 1. - f.x - f.y;
+  float up = z < 0. ? 1. : 0.;
+  float sg = 2. * up - 1.;
+  vec3 wt = pow(max(vec3(-z * sg, up - f.y * sg, up - f.x * sg), 0.), vec3(5.));
+  wt /= max(wt.x + wt.y + wt.z, 1e-6);
+  vec2 v[3] = vec2[3](b + vec2(up), b + vec2(up, 1. - up), b + vec2(1. - up, up));
+  vec4 h = vec4(0.0);
+  for (int i = 0; i < 3; i++) {
+    float r = 3.14159265 * (2. * hex_hash(v[i]) - 1.);  // up to +-180 degrees
+    float cr = cos(r);
+    float sr = sin(r);
+    mat2 R = mat2(cr, sr, -sr, cr);
+    vec2 o = vec2(hex_hash(v[i] + vec2(17., 5.)), hex_hash(v[i] + vec2(3., 29.)));
+    h += wt[i] * textureGrad(tex_T0, R * huv + o, R * hdx, R * hdy);
+  }
+  return mix(t, h, clamp(hex_tiling, 0.0, 1.0));
+}
+
 void main() {
-  vec4 T0 = texture(tex_T0, tex_coord.xy / tex_coord.z);
+  vec4 T0 = ocean_tex();
   if (bucket == 0) {
     color.rgb = fragment_color.rgb * T0.rgb;
     color.a = fragment_color.a;

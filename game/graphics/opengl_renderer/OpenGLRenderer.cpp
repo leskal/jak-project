@@ -1263,6 +1263,13 @@ void OpenGLRenderer::draw_renderer_selection_window() {
         ImGui::SliderFloat("Clear water depth (m)", &rl.clear_water_depth_m, 0.2f, 6.f);
         ImGui::SliderFloat("Water colour with depth", &rl.water_absorb, 0.f, 5.f);
         ImGui::SliderFloat("Refraction (bending under water)", &rl.water_refract, 0.f, 3.f);
+        // (AI-assisted) ported from Project Sandover (ISC licence)
+        ImGui::SliderFloat("Sky in reflections", &rl.sky_gradient, 0.f, 1.f);
+        ImGui::SliderFloat("Light through waves", &rl.wave_light, 0.f, 2.f);
+        ImGui::SliderFloat("Foam on wave crests", &rl.crest_foam, 0.f, 2.f);
+        ImGui::SliderFloat("Hide sea texture repeat", &rl.hex_tiling, 0.f, 1.f);
+        ImGui::Checkbox("Calm water in the sunken city", &rl.lake_waves);
+        ImGui::Checkbox("Misty quicksand as wet mud", &rl.wet_mud);
         ImGui::Checkbox("Shore foam", &rl.shore_foam);
         ImGui::SliderFloat("Foam strength", &rl.foam_strength, 0.f, 2.f);
         ImGui::SliderFloat("Shallow water tint", &rl.shallow_tint, 0.f, 1.f);

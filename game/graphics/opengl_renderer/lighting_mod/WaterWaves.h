@@ -207,6 +207,15 @@ inline bool set_water_uniforms(GLuint prog, SharedRenderState* rs) {
   }
   glUniform1f(loc("water_absorb"), 0.03f * rl.water_absorb);
   glUniform1f(loc("water_refract"), rl.water_refract);
+  // (AI-assisted) ported from Project Sandover (ISC licence): sky reflection, light through the
+  // waves, crest foam, hex tiling, and the lake waves when the camera is in the sunken city
+  // (below -100 m, the same test the game uses to pick the sunken sea, ocean.gc)
+  glUniform1f(loc("sky_gradient"), rl.sky_gradient);
+  glUniform1f(loc("wave_light"), rl.wave_light);
+  glUniform1f(loc("crest_foam"), rl.crest_foam);
+  glUniform1f(loc("hex_tiling"), rl.hex_tiling);
+  glUniform1i(loc("wave_lake"),
+              rl.lake_waves && rs->camera_pos.y() < -100.f * 4096.f ? 1 : 0);
 
   // (AI-assisted) the sun shadow maps, so the sea has no sun glints in shade (units 6 and 8, as
   // for the level). Own names: the inland water (merc) has its own shadow lookup and settings.

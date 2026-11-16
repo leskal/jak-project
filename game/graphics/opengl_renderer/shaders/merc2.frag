@@ -186,19 +186,63 @@ vec2 ripple_slope(vec2 p, float t, float fp) {
   return s;
 }
 
-// light the water surface: sky reflection (stronger at grazing angles) and sun glints
 float glint_vis = 1.0;  // (AI-assisted) sun visibility for the water's sun glints
-vec3 water_shade(vec3 base, vec3 N, vec3 V, vec3 sky_refl) {
+// (AI-assisted) ported from Project Sandover (ISC licence, github.com/bouzou4/project-sandover):
+// the sky in the reflection, light through the wave tops, and lighter crests / darker troughs.
+// Their numbers: sky 0.6, haze 400 m, subsurface 0.6, crest light 0.5.
+uniform float sky_gradient;  // 0 = the flat fog colour (before), 1 = sky gradient with sun glow
+uniform float wave_light;    // 1 = Sandover's subsurface and crest light
+float g_wave_h = 0.0;        // wave height here: about -1 (trough) .. 1 (crest)
+float g_sky = 1.0;           // 0 = no sky above (caves, the sunken city): no sky, no sun
+
+float water_lum(vec3 c) {
+  return dot(c, vec3(0.299, 0.587, 0.114));
+}
+
+// what the water reflects: the horizon colour low down, a deeper and bluer sky higher up (at the
+// same brightness as the fog colour, the game's horizon), a glow around the sun, hazing back
+// into the fog colour with distance
+vec3 sky_reflection(vec3 N, vec3 V, float dist_m) {
+  vec3 hor = fog_color.rgb * 1.1;
+  if (sky_gradient <= 0.0) {
+    return hor;
+  }
+  vec3 R = reflect(-V, N);
+  float l = water_lum(hor);
+  vec3 zen = mix(hor * 0.8, vec3(0.55, 0.75, 1.0) * l * 1.1, 0.5);
+  vec3 e = mix(hor, zen, smoothstep(0.0, 0.48, max(R.y, 0.0)));
+  vec3 L = normalize(sun_dir);
+  float glow = pow(max(dot(R, L), 0.0), 24.0) * smoothstep(-0.05, 0.1, L.y);
+  e += min(sun_color, vec3(1.5)) * glow * 0.6 * glint_vis;
+  e = min(e, vec3(0.97));
+  e = mix(e, hor, 1.0 - exp(-dist_m / 400.0));
+  return mix(hor, e, sky_gradient);
+}
+
+// light the water surface: sky reflection (stronger at grazing angles) and sun glints
+vec3 water_shade(vec3 base, vec3 N, vec3 V, float dist_m) {
   float ndv = max(dot(N, V), 0.0);
   float F = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
   vec3 L = normalize(sun_dir);
+  float up = smoothstep(0.0, 0.12, L.y) * g_sky;
   // the water's own color: a bit brighter where the waves face the sun
-  vec3 col = base * (0.88 + 0.24 * clamp(dot(N, L) * 0.5 + 0.5, 0.0, 1.0));
-  col = mix(col, sky_refl, clamp(F * water_reflect, 0.0, 1.0));
+  vec3 col = base * mix(1.0, 0.88 + 0.24 * clamp(dot(N, L) * 0.5 + 0.5, 0.0, 1.0), g_sky);
+  // crests a little lighter, troughs a little darker
+  col *= 1.0 + 0.5 * wave_light * clamp(g_wave_h, -1.0, 1.0) * 0.5;
+  // light through the wave tops, strongest looking toward the sun
+  float back = pow(max(dot(-V, L), 0.0), 3.0) * up * glint_vis;
+  float sss = 0.6 * wave_light * max(g_wave_h, 0.0) * (0.35 + 1.4 * back) * max(up, 0.3 * g_sky);
+  float lum = water_lum(base);
+  vec3 shallow_col = min(mix(vec3(lum), base, 1.25) * 1.9 + 0.02, vec3(0.95));
+  col += shallow_col * min(sun_color, vec3(1.5)) * sss * 0.6;
+  if (g_sky > 0.5) {
+    // no sky above: nothing reflected here (the game's own reflection layer stays)
+    col = mix(col, sky_reflection(N, V, dist_m), clamp(F * water_reflect, 0.0, 1.0));
+  }
   vec3 H = normalize(L + V);
   float spec = pow(max(dot(N, H), 0.0), 350.0) * 25.0;
   if (L.y > 0.0) {
-    col += sun_color * spec * water_spec * 0.25 * glint_vis;  // (AI-assisted) none in shade
+    col += sun_color * spec * water_spec * 0.25 * glint_vis * g_sky;  // (AI-assisted) none in shade
   }
   return col;
 }
@@ -430,7 +474,29 @@ void main() {
     color.rgb += albedo * point_lights(merc_world, N);
   }
 
-  if (is_water == 1 && waves_on == 1 && world_valid == 1) {
+  // (AI-assisted) after Project Sandover (ISC licence): Misty's quicksand as wet mud: the game's
+  // colour darkened, a rough sky reflection capped at 0.15, and a broad, soft sun highlight
+  if (is_water == 3 && waves_on == 1 && world_valid == 1) {
+    vec2 p = merc_world.xz / 4096.0;
+    float dist_m = length(merc_world - cam_trans_m) / 4096.0;
+    vec3 V = normalize(cam_trans_m - merc_world);
+    float fp = dist_m * (2.0 / max(water_viewport_h, 1.0)) / max(abs(V.y), 0.08);
+    vec2 slope = ripple_slope(p * 0.5, wave_time * 0.3, fp * 0.5) * 0.25;
+    vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
+    glint_vis = sun_vis;
+    float F = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+    vec3 col = color.rgb * 0.8;
+    col = mix(col, sky_reflection(N, V, dist_m), min(F * water_reflect, 0.15));
+    vec3 L = normalize(sun_dir);
+    float ndh = max(dot(N, normalize(L + V)), 0.0);
+    if (L.y > 0.0) {
+      col += min(sun_color, vec3(1.5)) * pow(ndh, 24.0) * 0.12 * glint_vis * water_spec;
+    }
+    color.rgb = col;
+  }
+
+  if ((is_water == 1 || is_water == 2) && waves_on == 1 && world_valid == 1) {
+    g_sky = is_water == 2 ? 0.0 : 1.0;  // (AI-assisted) water in a cave: no sky, no sun
     vec2 p = merc_world.xz / 4096.0;
     float dist_m = length(merc_world - cam_trans_m) / 4096.0;
     // rivers and ponds: small waves and ripples (no big ocean swell)
@@ -438,6 +504,7 @@ void main() {
     // size of one pixel on the water (m), from distance and angle (smooth across triangles)
     float fp = dist_m * (2.0 / max(water_viewport_h, 1.0)) / max(abs(V.y), 0.08);
     vec2 slope = wave_slope_aa(p * 2.5, wave_time, wave_height * 0.15, fp * 2.5);
+    g_wave_h = wave_field(p * 2.5, wave_time, 1.0).x / 0.65;  // (AI-assisted) crest / trough
     slope += ripple_slope(p, wave_time, fp) * ripple_strength;
     vec3 wake = wake_field(merc_world / 4096.0, wave_time, fp);
     slope += wake.yz;
@@ -472,7 +539,7 @@ void main() {
       body = texelFetch(scene_color, px, 0).rgb * T + color.rgb * (1.0 - T);
       trans = dot(T, vec3(1.0 / 3.0));
     }
-    color.rgb = water_shade(body, N, V, fog_color.rgb * 1.1);
+    color.rgb = water_shade(body, N, V, dist_m);
     color.rgb += fog_color.rgb * clamp(wake.x * 5.0, 0.0, 0.3);  // light line on wake crests
 
     // (AI-assisted) clear water: how far the view goes through the water to the ground below

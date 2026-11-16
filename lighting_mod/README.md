@@ -22,7 +22,10 @@ inside OpenGOAL's own files is marked `(AI-assisted)`, and no AI pull requests g
   loads, flickering and pulsing with the game's own effects (see `kb/surface-lights.md`).
 - **Jak's soft shadows from point lights** (spheres on his skeleton).
 - **Water**: moving waves and ripples on the sea and inland water, sun glints (none in shade),
-  wakes around Jak, clear shallow water, shore foam and a wet shoreline.
+  wakes around Jak, clear shallow water that turns blue-green with depth, refraction, shore and
+  rock foam, a wet shoreline, a sky gradient with sun glow in reflections, light through the wave
+  tops, foam on wave crests, no visible repeat in the sea texture, calm water in the sunken city,
+  no sky reflection in caves, and Misty's quicksand as wet mud.
 - **Bloom**: a soft glow around bright things (fire, eco, lamps, the sun on water), not the HUD.
 - **Smoother level normals** (no lighting seams on the ground).
 
@@ -64,4 +67,12 @@ search for `(AI-assisted)` to find them.
 - OpenGOAL (github.com/open-goal/jak-project), which this is built on.
 - Project Sandover (github.com/bouzou4/project-sandover, ISC license): its research on Jak 1's
   time-of-day palette slots (which slots are flames, lava and lamps per level) is what the
-  glowing surface lights are built on, and its notes shaped our water and folder layout.
+  glowing surface lights are built on, and its notes shaped our water and folder layout. Ported
+  from it, with changes: the water's colour absorption numbers, the sky reflection, light through
+  the waves, crest foam (adapted to our waves), hex tiling of the sea texture (copied), the lake
+  wave set, no sky in caves and the wet mud rule.
+
+  ISC License, Copyright (c) Project Sandover contributors: Permission to use, copy, modify,
+  and/or distribute this software for any purpose with or without fee is hereby granted,
+  provided that the above copyright notice and this permission notice appear in all copies.
+  THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES.

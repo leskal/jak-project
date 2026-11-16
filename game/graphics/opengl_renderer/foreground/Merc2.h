@@ -180,6 +180,8 @@ class Merc2 {
     NO_TEXTURE = 4,
     WATER_WAVES = 8,  // (AI-assisted) water surface: ripples, reflections, glints
     NO_JAK_SHADOW = 16,  // (AI-assisted) Jak / Daxter: don't receive Jak's point light shadow
+    WATER_MUD = 32,      // (AI-assisted) Misty's quicksand: wet mud
+    WATER_NO_SKY = 64,   // (AI-assisted) water in a cave: no sky to reflect, no sun
   };
 
   struct Draw {
@@ -221,6 +223,8 @@ class Merc2 {
     bool no_texture;
     bool water_waves;  // (AI-assisted)
     bool no_jak_shadow;  // (AI-assisted)
+    bool water_mud;      // (AI-assisted)
+    bool water_no_sky;   // (AI-assisted)
     u64 hash;
     u32 lights;
     u32 first_bone;

@@ -750,6 +750,16 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
   args.water_waves = render_state->version == GameVersion::Jak1 &&
                      strncmp(name, "water-anim", 10) == 0 && !strstr(name, "lava") &&
                      !strstr(name, "mud") && !strstr(name, "dark-eco");
+  // (AI-assisted) after Project Sandover: Misty's quicksand (water-anim ... mud) as wet mud, and
+  // water in levels with no sky above (caves, the sunken city) reflects no sky and gets no sun
+  args.water_mud = render_state->version == GameVersion::Jak1 &&
+                   render_state->relight.wet_mud && strncmp(name, "water-anim", 10) == 0 &&
+                   strstr(name, "mud") != nullptr;
+  {
+    const std::string& ln = model_ref->level->level->level_name;
+    args.water_no_sky = ln == "maincave" || ln == "darkcave" || ln == "robocave" ||
+                        ln == "sunken" || ln == "sunkenb";
+  }
   // (AI-assisted) Jak's sphere shadow shouldn't fall on Jak himself or on Daxter
   args.no_jak_shadow = is_jak || strncmp(name, "sidekick", 8) == 0;
   args.disable_fog = model_disables_fog;
@@ -1246,6 +1256,12 @@ Merc2::Draw* Merc2::alloc_normal_draw(const tfrag3::MercDraw& mdraw, const DrawA
   if (args.no_jak_shadow) {
     draw->flags |= NO_JAK_SHADOW;
   }
+  if (args.water_mud) {
+    draw->flags |= WATER_MUD;  // (AI-assisted)
+  }
+  if (args.water_no_sky) {
+    draw->flags |= WATER_NO_SKY;  // (AI-assisted)
+  }
   for (int i = 0; i < 4; i++) {
     draw->fade[i] = 0;
   }
@@ -1534,7 +1550,10 @@ void Merc2::do_draws(const Draw* draw_array,
   for (u32 di = 0; di < num_draws; di++) {
     auto& draw = draw_array[di];
     if (is_water_loc >= 0) {
-      const int w = (draw.flags & WATER_WAVES) ? 1 : 0;
+      // (AI-assisted) 1 water, 2 water with no sky above, 3 wet mud
+      const int w = (draw.flags & WATER_MUD)     ? 3
+                    : (draw.flags & WATER_WAVES) ? ((draw.flags & WATER_NO_SKY) ? 2 : 1)
+                                                 : 0;
       if (w != last_water) {
         glUniform1i(is_water_loc, w);
         last_water = w;
