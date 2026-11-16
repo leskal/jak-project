@@ -185,6 +185,42 @@ vec3 water_shade(vec3 base, vec3 N, vec3 V, vec3 sky_refl) {
 }
 // ---- end of water waves ----
 
+// ---- (AI-assisted) wakes: rings of ripples spreading from Jak ----
+uniform vec4 drops[16];      // xyz = where it started (m, y = Jak's feet), w = start time
+uniform float drop_amp[16];
+uniform int drop_count;
+
+// x = height (m), yz = slope. wp in meters. fp = size of a pixel (m), 0 = don't fade.
+vec3 wake_field(vec3 wp, float t, float fp) {
+  vec3 r = vec3(0.0);
+  const float k = 6.2831853 / 0.6;  // ripples 60 cm apart
+  for (int i = 0; i < drop_count; i++) {
+    float age = t - drops[i].w;
+    if (age < 0.0 || age > 4.0) {
+      continue;
+    }
+    // only on water at the right height: from a bit below Jak's feet to ~2.3 m above them
+    float above = wp.y - drops[i].y;
+    float vfade = smoothstep(-1.0, -0.6, above) * (1.0 - smoothstep(2.0, 2.6, above));
+    if (vfade <= 0.0) {
+      continue;
+    }
+    vec2 d = wp.xz - drops[i].xz;
+    float dist = length(d);
+    float front = 1.1 * age;  // the ring grows at 1.1 m/s
+    float x = (dist - front) / 0.45;
+    float env = exp(-x * x) * exp(-age * 0.6) / (1.0 + dist * 0.5);
+    float ph = k * (dist - front);
+    float a = drop_amp[i] * env * vfade;
+    r.x += a * cos(ph);
+    r.yz += -a * k * sin(ph) * d / max(dist, 1e-3);
+  }
+  if (fp > 0.0) {
+    r.yz *= clamp((0.6 / max(fp, 1e-4) - 3.0) / 5.0, 0.0, 1.0);
+  }
+  return r;
+}
+
 // point lights from glowing particles (see PointLights.cpp)
 in vec3 merc_normal;
 in vec4 vtx_rgba;
@@ -265,6 +301,21 @@ float sun_shadow_merc() {
   return mix(1.0, s, shadow_strength * edge);
 }
 
+// (AI-assisted) the normal used for lighting. Thin double-sided parts (windmill blades, flags,
+// leaves) show their back side with the normal pointing away from the camera: turn it around
+// when it clearly faces away (not near the outline of closed shapes, where it only leans away).
+vec3 merc_shading_normal() {
+  float nl = length(merc_normal);
+  vec3 N = nl > 1e-6 ? merc_normal / nl : vec3(0.0, 1.0, 0.0);
+  if (world_valid == 1) {
+    vec3 V = normalize(cam_trans_m - merc_world);
+    if (dot(N, V) < -0.3) {
+      N = -N;
+    }
+  }
+  return N;
+}
+
 void main() {
   // in shadow, remove the sun's part of the lighting (sky / ambient light stays)
   float sun_vis = sun_shadow_merc();
@@ -306,8 +357,7 @@ void main() {
   if (relight_mode == 1 && relight_amount > 0.0 && decal_enable == 0 && world_valid == 1) {
     vec3 albedo = (gfx_hack_no_tex == 0 ? texture(tex_T0, vtx_st).rgb : vec3(0.5)) *
                   (vtx_rgba.rgb * 2.0);  // texture x model color (128 = 1.0)
-    float nl = length(merc_normal);
-    vec3 N = nl > 1e-6 ? merc_normal / nl : vec3(0.0, 1.0, 0.0);
+    vec3 N = merc_shading_normal();
     vec3 sky = mix(ground_color, sky_color, N.y * 0.5 + 0.5);
     vec3 phys = filmic(albedo * (sun_color * max(dot(N, sun_dir), 0.0) * sun_vis + sky) * exposure);
     color.rgb = mix(color.rgb, phys, relight_amount);
@@ -317,8 +367,7 @@ void main() {
   if (pl_count > 0 && decal_enable == 0 && world_valid == 1) {
     vec3 albedo = (gfx_hack_no_tex == 0 ? texture(tex_T0, vtx_st).rgb : vec3(0.5)) *
                   (vtx_rgba.rgb * 2.0);  // texture x model color (128 = 1.0)
-    float nl = length(merc_normal);
-    vec3 N = nl > 1e-6 ? merc_normal / nl : vec3(0.0, 1.0, 0.0);
+    vec3 N = merc_shading_normal();
     color.rgb += albedo * point_lights(merc_world, N);
   }
 
@@ -331,8 +380,11 @@ void main() {
     float fp = dist_m * (2.0 / max(water_viewport_h, 1.0)) / max(abs(V.y), 0.08);
     vec2 slope = wave_slope_aa(p * 2.5, wave_time, wave_height * 0.15, fp * 2.5);
     slope += ripple_slope(p, wave_time, fp) * ripple_strength;
+    vec3 wake = wake_field(merc_world / 4096.0, wave_time, fp);
+    slope += wake.yz;
     vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
     color.rgb = water_shade(color.rgb, N, V, fog_color.rgb * 1.1);
+    color.rgb += fog_color.rgb * clamp(wake.x * 5.0, 0.0, 0.3);  // light line on wake crests
   }
 
   if (relight_debug == 2 && shadow_enabled == 1) {
@@ -341,8 +393,7 @@ void main() {
   if (relight_debug == 1) {
     // (AI-assisted) same colors as the level's normal view: up = green, so the top of Jak's
     // head should match flat ground
-    float nl = length(merc_normal);
-    vec3 N = nl > 1e-6 ? merc_normal / nl : vec3(0.0, 1.0, 0.0);
+    vec3 N = merc_shading_normal();
     color.rgb = N * 0.5 + 0.5;
   }
   if (relight_debug == 1 || relight_debug == 2) {

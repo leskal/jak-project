@@ -4,6 +4,7 @@
 #include "common/log/log.h"
 #include "common/util/FileUtil.h"
 
+#include "game/graphics/opengl_renderer/WaterWaves.h"
 #include "game/graphics/opengl_renderer/BlitDisplays.h"
 #include "game/graphics/opengl_renderer/DepthCue.h"
 #include "game/graphics/opengl_renderer/DirectRenderer.h"
@@ -1239,6 +1240,25 @@ void OpenGLRenderer::draw_renderer_selection_window() {
         ImGui::SliderFloat("Water ripples", &rl.water_ripples, 0.f, 2.f);
         ImGui::SliderFloat("Water reflection", &rl.water_reflect, 0.f, 1.5f);
         ImGui::SliderFloat("Sun glints", &rl.water_spec, 0.f, 3.f);
+        ImGui::Checkbox("Wakes around Jak", &rl.water_wakes);
+        ImGui::SameLine();
+        ImGui::SliderFloat("Wake strength", &rl.wake_strength, 0.f, 3.f);
+        if (rl.jak_valid) {
+          ImGui::Text("Jak at (%.1f %.1f %.1f) m, feet %.1f m, rings now: %d, speed %.1f m/s",
+                      rl.jak_pos_m[0], rl.jak_pos_m[1], rl.jak_pos_m[2], rl.jak_feet_m,
+                      water_wake_active_count(water_wave_time()), water_wake_state().speed);
+        } else {
+          ImGui::Text("Jak not found yet (wakes need his position)");
+        }
+        ImGui::Checkbox("Hide the game's ripple rings", &rl.hide_game_ripples);
+        ImGui::Checkbox("Hide the game's water bubbles", &rl.hide_game_bubbles);
+        if (ImGui::TreeNode("Flat particle textures (debug)")) {
+          ImGui::TextWrapped("%s", m_render_state.seen_flat_particle_textures.c_str());
+          if (ImGui::Button("Clear list")) {
+            m_render_state.seen_flat_particle_textures.clear();
+          }
+          ImGui::TreePop();
+        }
       }
       ImGui::Checkbox("Auto exposure (measures the screen, like a camera)", &rl.auto_exposure);
       if (rl.auto_exposure) {

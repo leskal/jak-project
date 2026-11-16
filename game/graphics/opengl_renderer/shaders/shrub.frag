@@ -231,6 +231,10 @@ void main() {
     N = normalize(N + vec3(0.0, 1.0, 0.0));
     if (relight_debug == 1) {
       color.rgb = N * 0.5 + 0.5;
+      if (length(world_normal) <= 0.1) {
+        // (AI-assisted) debug: this surface has no smooth normal (flat fallback) -> red tint
+        color.rgb = mix(color.rgb, vec3(1.0, 0.0, 0.0), 0.6);
+      }
     } else if (relight_debug == 2) {
       color.rgb = vec3(sun_shadow(N));
     } else {

@@ -1,6 +1,8 @@
 #include "Merc2.h"
 
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "game/graphics/opengl_renderer/SunModel.h"
 #include "game/graphics/opengl_renderer/WaterWaves.h"
@@ -506,8 +508,9 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
   // the level is drawn before the characters).
   // The light directions are stored transposed: light 0 = (direction0.x, direction1.x, direction2.x)
   // (and they are in camera space, see below)
-  if (strncmp(name, "eichar", 6) == 0 || strncmp(name, "jakb", 4) == 0 ||
-      strncmp(name, "jakc", 4) == 0) {
+  const bool is_jak = strncmp(name, "eichar", 6) == 0 || strncmp(name, "jakb", 4) == 0 ||
+                     strncmp(name, "jakc", 4) == 0;
+  if (is_jak) {
     // these directions are in camera space (the game lights characters in camera space), so
     // turn them into world space: world = transpose(camera rotation) * camera-space direction
     const math::Vector3f dc(current_lights.direction0.x(), current_lights.direction1.x(),
@@ -555,6 +558,42 @@ void Merc2::handle_pc_model(const DmaTransfer& setup,
     memcpy(&skel_matrix_buffer[input_data[i]], real_addr, sizeof(MercMat));
   }
   input_data += 128 + 16 * i;
+
+  // (AI-assisted) where is Jak? (for water wakes): the bone positions are in camera space,
+  // turn them into world space. Use the median of the bones (a few helper bones can be far away
+  // from the body), and put the feet ~0.75 m below the middle of the body.
+  if (is_jak && i > 0 && render_state->version == GameVersion::Jak1) {
+    std::vector<float> bx, by, bz;
+    bx.reserve(i);
+    by.reserve(i);
+    bz.reserve(i);
+    for (int b = 0; b < i; b++) {
+      const auto& t = skel_matrix_buffer[input_data[b - 128 - 16 * i]].tmat[3];
+      float w[3];
+      for (int c = 0; c < 3; c++) {
+        w[c] = render_state->camera_rot[c][0] * t[0] + render_state->camera_rot[c][1] * t[1] +
+               render_state->camera_rot[c][2] * t[2] + render_state->camera_pos[c];
+      }
+      if (!std::isfinite(w[0]) || !std::isfinite(w[1]) || !std::isfinite(w[2])) {
+        continue;
+      }
+      bx.push_back(w[0]);
+      by.push_back(w[1]);
+      bz.push_back(w[2]);
+    }
+    if (!bx.empty()) {
+      auto median = [](std::vector<float>& v) {
+        std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
+        return v[v.size() / 2];
+      };
+      auto& rl = render_state->relight;
+      rl.jak_pos_m[0] = median(bx) / 4096.f;
+      rl.jak_pos_m[1] = median(by) / 4096.f;
+      rl.jak_pos_m[2] = median(bz) / 4096.f;
+      rl.jak_feet_m = rl.jak_pos_m[1] - 0.75f;
+      rl.jak_valid = true;
+    }
+  }
 
   // Next part is some flags
   struct PcMercFlags {

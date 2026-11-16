@@ -448,6 +448,102 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
     std::swap(sn, next);
   }
 
+  // (AI-assisted) blend across seams. Some ground pieces don't share points with their neighbours
+  // (separate pieces, or a corner of one piece in the middle of the other's edge), so the
+  // smoothing above can't cross from one to the other. Blend each smooth point with all smooth
+  // points within 2.5 m that face a similar direction, closer ones counting more.
+  for (int pass = 0; pass < 2; pass++) {
+    constexpr float kRadius = 4.f * 4096.f;
+    std::unordered_map<Key, std::vector<u32>, KeyHash> grid;
+    grid.reserve(num_slots);
+    auto cell_of = [&](const math::Vector3f& p) {
+      return Key{(s64)std::floor(p.x() / kRadius), (s64)std::floor(p.y() / kRadius),
+                 (s64)std::floor(p.z() / kRadius)};
+    };
+    for (size_t sl = 0; sl < num_slots; sl++) {
+      if (smooth_slot[sl] && sn[sl].squared_length() > 0.f) {
+        grid[cell_of(slot_pos[sl])].push_back((u32)sl);
+      }
+    }
+    for (size_t sl = 0; sl < num_slots; sl++) {
+      next[sl] = sn[sl];
+      if (!smooth_slot[sl] || !(sn[sl].squared_length() > 0.f)) {
+        continue;
+      }
+      const Key c = cell_of(slot_pos[sl]);
+      math::Vector3f sum = sn[sl];
+      int looked = 0;  // limit the work in very detailed areas (load time)
+      for (int dx = -1; dx <= 1; dx++) {
+        for (int dy = -1; dy <= 1; dy++) {
+          for (int dz = -1; dz <= 1; dz++) {
+            auto it = grid.find(Key{c.x + dx, c.y + dy, c.z + dz});
+            if (it == grid.end()) {
+              continue;
+            }
+            for (u32 nb : it->second) {
+              if (nb == sl) {
+                continue;
+              }
+              if (++looked > 256) {
+                break;
+              }
+              const float d = (slot_pos[nb] - slot_pos[sl]).length();
+              if (d >= kRadius) {
+                continue;
+              }
+              const float a = sn[nb].dot(sn[sl]);
+              if (std::abs(a) < 0.7f) {
+                continue;  // faces a different way: a real edge, not a seam
+              }
+              const float w = 1.f - d / kRadius;
+              sum += (a < 0.f ? sn[nb] * -1.f : sn[nb]) * w;
+            }
+          }
+        }
+      }
+      const float l = sum.length();
+      if (l > 0.f) {
+        next[sl] = sum * (1.f / l);
+      }
+    }
+    std::swap(sn, next);
+  }
+
+  // (AI-assisted) make the normals point to the same side across the surface. The game's
+  // triangle winding is unreliable, so so far each point's normal could point up or down. The
+  // shader turns normals towards the camera, but only after they are blended across a triangle:
+  // if one corner points up and another down, the blend goes through zero in the middle (flat
+  // looking lines). Walk over the surface from neighbour to neighbour and flip each normal to
+  // agree with the one it was reached from; each connected surface starts pointing up.
+  {
+    std::vector<u8> visited(num_slots, 0);
+    std::vector<u32> queue;
+    for (size_t start = 0; start < num_slots; start++) {
+      if (visited[start] || !(sn[start].squared_length() > 0.f)) {
+        continue;
+      }
+      if (sn[start].y() < 0.f) {
+        sn[start] = sn[start] * -1.f;
+      }
+      visited[start] = 1;
+      queue.clear();
+      queue.push_back((u32)start);
+      for (size_t qi = 0; qi < queue.size(); qi++) {
+        const u32 cur = queue[qi];
+        for (u32 nb : slot_adj[cur]) {
+          if (visited[nb] || !(sn[nb].squared_length() > 0.f)) {
+            continue;
+          }
+          if (sn[nb].dot(sn[cur]) < 0.f) {
+            sn[nb] = sn[nb] * -1.f;
+          }
+          visited[nb] = 1;
+          queue.push_back(nb);
+        }
+      }
+    }
+  }
+
   std::vector<u32> result(verts.size(), 0);
   for (size_t i = 0; i < verts.size(); i++) {
     math::Vector3f n = vn[i];
@@ -455,12 +551,11 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
       continue;
     }
     const u32 sl = slot_of[i];
-    if (smooth_slot[sl]) {
-      const math::Vector3f& r = sn[sl];
-      const float d = r.dot(n);
-      if (std::abs(d) > 0.5f) {
-        n = d < 0.f ? r * -1.f : r;
-      }
+    const math::Vector3f& r = sn[sl];
+    if (smooth_slot[sl] && std::abs(r.dot(n)) > 0.5f) {
+      n = r;  // smoothed, and pointing to the same side as its neighbours
+    } else if (r.dot(n) < 0.f) {
+      n = n * -1.f;  // edge point: keep its own direction, but on the same side
     }
     result[i] = pack_to_gl_normal((s16)std::lround(n.x() * 511.f), (s16)std::lround(n.y() * 511.f),
                                   (s16)std::lround(n.z() * 511.f));
@@ -468,12 +563,29 @@ std::vector<u32> smooth_normals_packed(const std::vector<math::Vector3f>& verts,
   return result;
 }
 
+// (AI-assisted) a usable normal? Some game data has tiny garbage normals (almost zero length),
+// which shade as flat strips: treat those as missing too.
+bool normal_is_missing(u32 nor) {
+  if (nor == 0) {
+    return true;
+  }
+  auto field = [&](int shift) {
+    s32 v = (s32)((nor >> shift) & 1023);
+    if (v & 512) {
+      v -= 1024;  // sign extend 10 bits
+    }
+    return (float)v / 511.f;
+  };
+  const float x = field(0), y = field(10), z = field(20);
+  return x * x + y * y + z * z < 0.04f;  // shorter than 0.2 (real game normals are ~0.5..1)
+}
+
 void compute_missing_normals(std::vector<PreloadedVertex>& verts,
                              const std::vector<u32>& indices,
                              bool strips) {
   bool any_missing = false;
   for (const auto& v : verts) {
-    if (v.nor == 0) {
+    if (normal_is_missing(v.nor)) {
       any_missing = true;
       break;
     }
@@ -488,7 +600,7 @@ void compute_missing_normals(std::vector<PreloadedVertex>& verts,
   }
   auto packed = smooth_normals_packed(pos, indices, strips);
   for (size_t i = 0; i < verts.size(); i++) {
-    if (verts[i].nor == 0) {
+    if (normal_is_missing(verts[i].nor)) {
       verts[i].nor = packed[i];
     }
   }

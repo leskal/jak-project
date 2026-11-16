@@ -79,6 +79,10 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "water_ripples", rl.water_ripples);
     get_if(r, "water_reflect", rl.water_reflect);
     get_if(r, "water_spec", rl.water_spec);
+    get_if(r, "water_wakes", rl.water_wakes);
+    get_if(r, "hide_game_ripples", rl.hide_game_ripples);
+    get_if(r, "hide_game_bubbles", rl.hide_game_bubbles);
+    get_if(r, "wake_strength", rl.wake_strength);
     get_if(r, "auto_exposure_amount", rl.auto_exposure_amount);
     get_if(r, "auto_exposure_target", rl.auto_exposure_target);
     get_if(r, "auto_exposure_speed_s", rl.auto_exposure_speed_s);
@@ -184,6 +188,10 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"water_ripples", rl.water_ripples},
                   {"water_reflect", rl.water_reflect},
                   {"water_spec", rl.water_spec},
+                  {"water_wakes", rl.water_wakes},
+                  {"hide_game_ripples", rl.hide_game_ripples},
+                  {"hide_game_bubbles", rl.hide_game_bubbles},
+                  {"wake_strength", rl.wake_strength},
                   {"auto_exposure_amount", rl.auto_exposure_amount},
                   {"auto_exposure_target", rl.auto_exposure_target},
                   {"auto_exposure_speed_s", rl.auto_exposure_speed_s},

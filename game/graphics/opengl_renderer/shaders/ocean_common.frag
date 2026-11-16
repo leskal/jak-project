@@ -143,6 +143,42 @@ vec3 water_shade(vec3 base, vec3 N, vec3 V, vec3 sky_refl) {
 
 noperspective in vec4 rel_world_h;
 
+// ---- (AI-assisted) wakes: rings of ripples spreading from Jak ----
+uniform vec4 drops[16];      // xyz = where it started (m, y = Jak's feet), w = start time
+uniform float drop_amp[16];
+uniform int drop_count;
+
+// x = height (m), yz = slope. wp in meters. fp = size of a pixel (m), 0 = don't fade.
+vec3 wake_field(vec3 wp, float t, float fp) {
+  vec3 r = vec3(0.0);
+  const float k = 6.2831853 / 0.6;  // ripples 60 cm apart
+  for (int i = 0; i < drop_count; i++) {
+    float age = t - drops[i].w;
+    if (age < 0.0 || age > 4.0) {
+      continue;
+    }
+    // only on water at the right height: from a bit below Jak's feet to ~2.3 m above them
+    float above = wp.y - drops[i].y;
+    float vfade = smoothstep(-1.0, -0.6, above) * (1.0 - smoothstep(2.0, 2.6, above));
+    if (vfade <= 0.0) {
+      continue;
+    }
+    vec2 d = wp.xz - drops[i].xz;
+    float dist = length(d);
+    float front = 1.1 * age;  // the ring grows at 1.1 m/s
+    float x = (dist - front) / 0.45;
+    float env = exp(-x * x) * exp(-age * 0.6) / (1.0 + dist * 0.5);
+    float ph = k * (dist - front);
+    float a = drop_amp[i] * env * vfade;
+    r.x += a * cos(ph);
+    r.yz += -a * k * sin(ph) * d / max(dist, 1e-3);
+  }
+  if (fp > 0.0) {
+    r.yz *= clamp((0.6 / max(fp, 1e-4) - 3.0) / 5.0, 0.0, 1.0);
+  }
+  return r;
+}
+
 vec3 frag_world() {
   // interpolated from the triangle's corners (exact and smooth across triangle edges)
   return rel_world_h.xyz / rel_world_h.w + cam_trans;
@@ -160,9 +196,14 @@ vec3 ocean_waves(vec3 base) {
   float fp = dist_m * (2.0 / viewport.w) / max(abs(V.y), 0.08);
   vec2 slope = wave_slope_aa(p, wave_time, amp, fp);
   slope += ripple_slope(p, wave_time, fp) * ripple_strength;
+  vec3 wake = wake_field(wp / 4096.0, wave_time, fp);
+  slope += wake.yz;
   vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
   // reflected sky: the game's horizon color
-  return water_shade(base, N, V, fog_color.rgb * 1.1);
+  vec3 col = water_shade(base, N, V, fog_color.rgb * 1.1);
+  // (AI-assisted) wake crests: a soft light line (tiny foam / bright sky catching the crest)
+  col += fog_color.rgb * clamp(wake.x * 5.0, 0.0, 0.3);
+  return col;
 }
 
 void main() {

@@ -74,6 +74,8 @@ struct SharedRenderState {
     float color[3];    // color * alpha * area (m^2): how much light it gives
   };
   bool collect_particle_lights = false;
+  // (AI-assisted) names of the flat ("3D") particle textures drawn this frame (debug display)
+  std::string seen_flat_particle_textures;
   std::vector<ParticleLightSample> particle_light_samples;
   // point lights for the shaders (filled by PointLights each frame)
   struct PointLightsGpu {
@@ -105,6 +107,14 @@ struct SharedRenderState {
     float water_ripples = 0.7f;   // small ripples (lighting only)
     float water_reflect = 1.f;    // sky reflection
     float water_spec = 1.f;       // sun glints
+    bool water_wakes = true;      // ripples spreading from Jak in water
+    bool hide_game_ripples = true;  // hide the game's flat white ring pictures on water
+    bool hide_game_bubbles = true;  // hide the game's bubbles / drops on water
+    float wake_strength = 1.f;
+    // (runtime) where Jak is, from his model (meters, world)
+    bool jak_valid = false;
+    float jak_pos_m[3] = {0, 0, 0};
+    float jak_feet_m = 0.f;
     // (AI-assisted) auto exposure: measures the screen and adapts, like a camera / your eyes
     bool auto_exposure = true;
     float auto_exposure_amount = 0.8f;   // 0 = none, 1 = always reach the target

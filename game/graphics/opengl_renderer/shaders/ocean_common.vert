@@ -47,6 +47,42 @@ vec3 wave_field(vec2 p, float t, float amp) {
   return r;
 }
 
+// ---- (AI-assisted) wakes: rings of ripples spreading from Jak ----
+uniform vec4 drops[16];      // xyz = where it started (m, y = Jak's feet), w = start time
+uniform float drop_amp[16];
+uniform int drop_count;
+
+// x = height (m), yz = slope. wp in meters. fp = size of a pixel (m), 0 = don't fade.
+vec3 wake_field(vec3 wp, float t, float fp) {
+  vec3 r = vec3(0.0);
+  const float k = 6.2831853 / 0.6;  // ripples 60 cm apart
+  for (int i = 0; i < drop_count; i++) {
+    float age = t - drops[i].w;
+    if (age < 0.0 || age > 4.0) {
+      continue;
+    }
+    // only on water at the right height: from a bit below Jak's feet to ~2.3 m above them
+    float above = wp.y - drops[i].y;
+    float vfade = smoothstep(-1.0, -0.6, above) * (1.0 - smoothstep(2.0, 2.6, above));
+    if (vfade <= 0.0) {
+      continue;
+    }
+    vec2 d = wp.xz - drops[i].xz;
+    float dist = length(d);
+    float front = 1.1 * age;  // the ring grows at 1.1 m/s
+    float x = (dist - front) / 0.45;
+    float env = exp(-x * x) * exp(-age * 0.6) / (1.0 + dist * 0.5);
+    float ph = k * (dist - front);
+    float a = drop_amp[i] * env * vfade;
+    r.x += a * cos(ph);
+    r.yz += -a * k * sin(ph) * d / max(dist, 1e-3);
+  }
+  if (fp > 0.0) {
+    r.yz *= clamp((0.6 / max(fp, 1e-4) - 3.0) / 5.0, 0.0, 1.0);
+  }
+  return r;
+}
+
 void main() {
   vec3 ndc = vec3((position_in.x - 0.5) * 16., -(position_in.y - 0.5) * 32, position_in.z * 2 - 1.);
   // scissoring area adjust
@@ -61,8 +97,9 @@ void main() {
     float dist_m = length(wp - cam_trans) / 4096.0;
     // only near the camera, fading out before the end of the detailed near ocean mesh
     float amp = wave_height * (1.0 - smoothstep(wave_range * 0.5, wave_range, dist_m));
-    if (amp > 0.0 && displace == 1) {
-      float h = wave_field(wp.xz / 4096.0, wave_time, amp).x * 4096.0;
+    if ((amp > 0.0 || drop_count > 0) && displace == 1) {
+      float h = (wave_field(wp.xz / 4096.0, wave_time, amp).x +
+                 wake_field(wp / 4096.0, wave_time, 0.0).x) * 4096.0;
       vec3 c2 = c + cam_rot * vec3(0.0, h, 0.0);
       float W2 = -c2.z * cam_pzw;
       if (W2 * W > 0.0 && abs(W2) > 1.0) {
