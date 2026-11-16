@@ -1330,6 +1330,16 @@ void Merc2::flush_draw_buckets(SharedRenderState* render_state,
                      render_state->point_lights.pos_radius);
         glUniform4fv(glGetUniformLocation(mid, "pl_color"), render_state->point_lights.count,
                      render_state->point_lights.color);
+        // (AI-assisted) point light shadows, unit 9
+        glUniform1i(glGetUniformLocation(mid, "pl_shadow_tex"), 9);
+        glUniform1i(glGetUniformLocation(mid, "pl_shadows_on"), rl.pl_shadow_valid ? 1 : 0);
+        if (rl.pl_shadow_valid) {
+          glActiveTexture(GL_TEXTURE9);
+          glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, rl.pl_shadow_tex);
+          glActiveTexture(GL_TEXTURE0);
+          glUniform1iv(glGetUniformLocation(mid, "pl_shadow_layer"), 16, rl.pl_shadow_layer);
+          glUniform1f(glGetUniformLocation(mid, "pl_shadow_res"), rl.pl_shadow_res);
+        }
       }
       // physical sun mode (only together with sun shadows, which provide the world position)
       glUniform1i(glGetUniformLocation(mid, "relight_mode"), rl.mode);

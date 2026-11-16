@@ -25,6 +25,8 @@ class SunShadow {
 
   // Draw the shadow map. Fills in render_state->relight.shadow_* for the level shaders.
   void render(SharedRenderState* render_state, ScopedProfilerNode& prof);
+  // (AI-assisted) cube shadow maps for the strongest point lights (call after PointLights::update)
+  void render_point_shadows(SharedRenderState* render_state, ScopedProfilerNode& prof);
   void draw_debug_window();
   // shows the shadow map in the bottom left corner (debugging)
   void draw_overlay(SharedRenderState* render_state);
@@ -34,6 +36,10 @@ class SunShadow {
   int resolution = 4096;       // shadow map size in pixels
   float half_size_m = 60.f;    // the shadow map covers this many meters around the camera
   // second, bigger shadow map for things far away (less sharp) (AI-assisted)
+  bool point_shadows = true;     // point lights (fire, glowing things) cast shadows
+  int point_shadow_count = 4;    // how many of the strongest point lights get shadows
+  int point_shadow_res = 512;    // size of each cube face
+  static constexpr int kMaxPointShadows = 4;
   bool far_enabled = true;
   float far_half_size_m = 400.f;
   int far_resolution = 4096;
@@ -52,6 +58,18 @@ class SunShadow {
  private:
   void setup_target();
   void free_target();
+  void draw_level_geometry(SharedRenderState* render_state,
+                           ScopedProfilerNode& prof,
+                           GLint use_tex_loc);
+  bool compile_point_program();
+  void setup_point_target();
+  void free_point_target();
+  GLuint m_point_program = 0;
+  bool m_point_compile_failed = false;
+  GLuint m_point_fbo = 0;
+  GLuint m_point_tex = 0;
+  int m_point_res = 0;
+  int m_point_shadow_count = 0;
   void setup_far_target();
   void free_far_target();
   GLuint m_far_fbo = 0;

@@ -98,11 +98,17 @@ struct SharedRenderState {
     int mode = 1;                   // 0 = classic, 1 = physical
     bool auto_sun_color = true;     // sun / sky colors follow the sun height (atmosphere)
     bool sky_from_game = true;      // (AI-assisted) sky light takes the color of the game's sky
-    bool auto_exposure = true;      // (AI-assisted) brighter exposure when there is less light
-    float auto_exposure_amount = 0.6f;  // 0 = none, 1 = full adaptation
+    // (AI-assisted) auto exposure: measures the screen and adapts, like a camera / your eyes
+    bool auto_exposure = true;
+    float auto_exposure_amount = 0.8f;   // 0 = none, 1 = always reach the target
+    float auto_exposure_target = 0.25f;  // average brightness to aim for
+    float auto_exposure_speed_s = 1.5f;  // how fast it adapts (seconds)
+    float auto_exposure_min = 0.4f;
+    float auto_exposure_max = 2.5f;
+    float auto_exposure_factor = 1.f;    // (runtime) current auto exposure
     float sky_color[3] = {0.45f, 0.55f, 0.75f};
     float ground_color[3] = {0.35f, 0.30f, 0.24f};
-    float exposure = 1.0f;
+    float exposure = 0.8f;
     float keep_painted = 0.35f;     // how much of the game's painted shading to keep (0..1)
     float ground_smooth = 1.0f;     // (AI-assisted) hide triangle patches on ground under a low sun
 
@@ -131,6 +137,11 @@ struct SharedRenderState {
     float shadow_normal_offset = 0.f;  // game units
     float shadow_clip[16] = {};        // world -> shadow map clip space (for drawing into it)
     // (AI-assisted) far shadow map (bigger area, less sharp)
+    // (AI-assisted) point light shadows (cube map array, one cube per shadowed light)
+    bool pl_shadow_valid = false;
+    GLuint pl_shadow_tex = 0;
+    int pl_shadow_layer[16] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+    float pl_shadow_res = 512.f;
     bool far_shadow_valid = false;
     GLuint far_shadow_tex = 0;
     float far_shadow_mat[16] = {};

@@ -1025,6 +1025,7 @@ void OpenGLRenderer::render(DmaFollower dma, const RenderOptions& settings) {
     auto prof = m_profiler.root()->make_scoped_child("sun-shadow");
     m_sun_shadow.render(&m_render_state, prof);
     m_point_lights.update(&m_render_state);  // (AI-assisted) lights from last frame's particles
+    m_sun_shadow.render_point_shadows(&m_render_state, prof);  // (AI-assisted)
 
     // Jak 1 draws a dark blob shadow under characters. When they cast real sun shadows, that would
     // give them two shadows, so switch the blob shadow renderer off (and back on when not needed).
@@ -1231,8 +1232,15 @@ void OpenGLRenderer::draw_renderer_selection_window() {
     if (rl.mode == 1) {
       ImGui::Checkbox("Sun & sky color from sun height (atmosphere)", &rl.auto_sun_color);
       ImGui::Checkbox("Sky light color from the game's sky", &rl.sky_from_game);
-      ImGui::Checkbox("Auto exposure (adapt to evening/night)", &rl.auto_exposure);
-      ImGui::SliderFloat("Auto exposure amount", &rl.auto_exposure_amount, 0.f, 1.f);
+      ImGui::Checkbox("Auto exposure (measures the screen, like a camera)", &rl.auto_exposure);
+      if (rl.auto_exposure) {
+        ImGui::SliderFloat("Auto exposure target", &rl.auto_exposure_target, 0.05f, 0.6f);
+        ImGui::SliderFloat("Auto exposure amount", &rl.auto_exposure_amount, 0.f, 1.f);
+        ImGui::SliderFloat("Adapt speed (s)", &rl.auto_exposure_speed_s, 0.1f, 10.f);
+        ImGui::SliderFloat("Min exposure", &rl.auto_exposure_min, 0.1f, 1.f);
+        ImGui::SliderFloat("Max exposure", &rl.auto_exposure_max, 1.f, 5.f);
+        m_auto_exposure.draw_debug_text(&m_render_state);
+      }
       ImGui::ColorEdit3("Sky light", rl.sky_color);
       ImGui::ColorEdit3("Ground bounce", rl.ground_color);
       ImGui::SliderFloat("Exposure", &rl.exposure, 0.3f, 3.f);
@@ -1473,6 +1481,9 @@ void OpenGLRenderer::dispatch_buckets_jak1(DmaFollower dma,
       g_current_renderer = "ssao";
       auto p = prof.make_scoped_child("ssao");
       m_ssao.render(&m_render_state, p, m_fbo_state.render_fbo->multisample_count);
+      // (AI-assisted) measure how bright the world looks, for auto exposure
+      m_auto_exposure.update(&m_render_state, m_fbo_state.render_fbo->fbo_id,
+                             m_fbo_state.render_fbo->width, m_fbo_state.render_fbo->height);
     }
 
     // hack to draw the collision mesh in the middle the drawing

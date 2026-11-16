@@ -127,6 +127,38 @@ uniform int pl_count;
 uniform vec4 pl_pos_radius[16];  // xyz = world position, w = reach (game units)
 uniform vec4 pl_color[16];
 
+// (AI-assisted) shadows of the strongest point lights (cube shadow maps, see SunShadow.cpp)
+uniform samplerCubeArrayShadow pl_shadow_tex;
+uniform int pl_shadow_layer[16];  // -1 = this light has no shadow map
+uniform int pl_shadows_on;
+uniform float pl_shadow_res;
+
+float pl_shadow(int i, vec3 wp, vec3 N, float d) {
+  if (pl_shadows_on == 0) {
+    return 1.0;
+  }
+  int layer = pl_shadow_layer[i];
+  if (layer < 0) {
+    return 1.0;
+  }
+  float R = pl_pos_radius[i].w;
+  // push off the surface a little (more further from the light, where texels are bigger)
+  float texel = 2.0 * d / pl_shadow_res;
+  vec3 dir = wp + N * (texel * 1.5 + 20.0) - pl_pos_radius[i].xyz;
+  float len = length(dir);
+  float ref = len / R - 0.003;
+  // 4 samples around the direction, for soft edges
+  vec3 a = abs(dir.y) < 0.9 * len ? cross(dir, vec3(0.0, 1.0, 0.0)) : cross(dir, vec3(1.0, 0.0, 0.0));
+  a = normalize(a);
+  vec3 b = normalize(cross(dir, a));
+  float o = len * 1.5 / pl_shadow_res;
+  float s = texture(pl_shadow_tex, vec4(dir + (a + b) * o, float(layer)), ref);
+  s += texture(pl_shadow_tex, vec4(dir + (a - b) * o, float(layer)), ref);
+  s += texture(pl_shadow_tex, vec4(dir - (a - b) * o, float(layer)), ref);
+  s += texture(pl_shadow_tex, vec4(dir - (a + b) * o, float(layer)), ref);
+  return s * 0.25;
+}
+
 vec3 point_lights(vec3 wp, vec3 N) {
   vec3 sum = vec3(0.0);
   for (int i = 0; i < pl_count; i++) {
@@ -138,7 +170,7 @@ vec3 point_lights(vec3 wp, vec3 N) {
     }
     float d = sqrt(d2);
     L /= max(d, 1.0);
-    float ndl = max(dot(N, L), 0.0);
+    float ndl = max(dot(N, L), 0.0) * pl_shadow(i, wp, N, d);
     // smooth end of the light's reach
     float x = d2 / (R * R);
     float window = (1.0 - x * x);

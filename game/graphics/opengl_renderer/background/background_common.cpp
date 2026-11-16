@@ -331,6 +331,16 @@ void first_tfrag_draw_setup(const GoalBackgroundCameraData& settings,
       glUniform4fv(glGetUniformLocation(id, "pl_color"), render_state->point_lights.count,
                    render_state->point_lights.color);
     }
+    // (AI-assisted) point light shadows, always on unit 9
+    glUniform1i(glGetUniformLocation(id, "pl_shadow_tex"), 9);
+    glUniform1i(glGetUniformLocation(id, "pl_shadows_on"), rl.pl_shadow_valid ? 1 : 0);
+    if (rl.pl_shadow_valid) {
+      glActiveTexture(GL_TEXTURE9);
+      glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, rl.pl_shadow_tex);
+      glActiveTexture(GL_TEXTURE0);
+      glUniform1iv(glGetUniformLocation(id, "pl_shadow_layer"), 16, rl.pl_shadow_layer);
+      glUniform1f(glGetUniformLocation(id, "pl_shadow_res"), rl.pl_shadow_res);
+    }
     // character shadows (from last frame), always on unit 7
     glUniform1i(glGetUniformLocation(id, "char_shadow_tex"), 7);
     glUniform1i(glGetUniformLocation(id, "char_shadow_enabled"),

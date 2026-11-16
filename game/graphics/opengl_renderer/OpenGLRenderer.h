@@ -9,6 +9,7 @@
 #include "game/graphics/opengl_renderer/CollideMeshRenderer.h"
 #include "game/graphics/opengl_renderer/Fbo.h"
 #include "game/graphics/opengl_renderer/Profiler.h"
+#include "game/graphics/opengl_renderer/AutoExposure.h"
 #include "game/graphics/opengl_renderer/SSAO.h"
 #include "game/graphics/opengl_renderer/SunShadow.h"
 #include "game/graphics/opengl_renderer/GlowLight.h"
@@ -135,6 +136,7 @@ class OpenGLRenderer {
   SunShadow m_sun_shadow;  // (AI-assisted) relighting mod sun shadows
   GlowLight m_glow_light;  // (AI-assisted) glow light mod
   PointLights m_point_lights;  // (AI-assisted) point lights from glowing particles
+  AutoExposure m_auto_exposure;  // (AI-assisted) measured auto exposure
   CollideMeshRenderer m_collide_renderer;
 
   float m_last_pmode_alp = 1.;

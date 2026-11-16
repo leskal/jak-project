@@ -74,6 +74,10 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "sky_from_game", rl.sky_from_game);
     get_if(r, "auto_exposure", rl.auto_exposure);
     get_if(r, "auto_exposure_amount", rl.auto_exposure_amount);
+    get_if(r, "auto_exposure_target", rl.auto_exposure_target);
+    get_if(r, "auto_exposure_speed_s", rl.auto_exposure_speed_s);
+    get_if(r, "auto_exposure_min", rl.auto_exposure_min);
+    get_if(r, "auto_exposure_max", rl.auto_exposure_max);
     get_if(r, "exposure", rl.exposure);
     get_if(r, "keep_painted", rl.keep_painted);
     get_if(r, "ground_smooth", rl.ground_smooth);
@@ -99,6 +103,9 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(s, "resolution", sun.resolution);
     get_if(s, "half_size_m", sun.half_size_m);
     get_if(s, "far_enabled", sun.far_enabled);
+    get_if(s, "point_shadows", sun.point_shadows);
+    get_if(s, "point_shadow_count", sun.point_shadow_count);
+    get_if(s, "point_shadow_res", sun.point_shadow_res);
     get_if(s, "far_half_size_m", sun.far_half_size_m);
     get_if(s, "strength", sun.strength);
     get_if(s, "normal_offset_m", sun.normal_offset_m);
@@ -166,6 +173,10 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"sky_from_game", rl.sky_from_game},
                   {"auto_exposure", rl.auto_exposure},
                   {"auto_exposure_amount", rl.auto_exposure_amount},
+                  {"auto_exposure_target", rl.auto_exposure_target},
+                  {"auto_exposure_speed_s", rl.auto_exposure_speed_s},
+                  {"auto_exposure_min", rl.auto_exposure_min},
+                  {"auto_exposure_max", rl.auto_exposure_max},
                   {"exposure", rl.exposure},
                   {"keep_painted", rl.keep_painted},
                   {"ground_smooth", rl.ground_smooth},
@@ -175,6 +186,9 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"resolution", sun.resolution},
                   {"half_size_m", sun.half_size_m},
                   {"far_enabled", sun.far_enabled},
+                  {"point_shadows", sun.point_shadows},
+                  {"point_shadow_count", sun.point_shadow_count},
+                  {"point_shadow_res", sun.point_shadow_res},
                   {"far_half_size_m", sun.far_half_size_m},
                   {"strength", sun.strength},
                   {"normal_offset_m", sun.normal_offset_m},

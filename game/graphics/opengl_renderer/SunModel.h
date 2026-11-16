@@ -105,15 +105,8 @@ inline void relight_light_colors(const SharedRenderState::RelightSettings& rl,
   atmosphere_colors(rl, L, sky_base, 1.f - game_mix, sun, sky, ground);
 
   if (rl.auto_exposure) {
-    // like eyes or a camera: when there is less light (evening, night), open up the exposure.
-    // Reference: the same settings with the sun 60 degrees high (no change at midday).
-    const float Lref[3] = {0.f, 0.866f, 0.5f};
-    float rs[3], rk[3], rg[3];
-    atmosphere_colors(rl, Lref, rl.sky_color, 1.f, rs, rk, rg);
-    const float key_ref = 0.5f * lum(rs) + lum(rk);
-    const float key = 0.5f * lum(sun) + lum(sky);
-    float k = std::pow(key_ref / std::max(key, 1e-4f), rl.auto_exposure_amount);
-    k = std::min(std::max(k, 1.f), 2.f);
+    // measured from the screen by AutoExposure (like a camera / your eyes adapting)
+    const float k = rl.auto_exposure_factor;
     for (int i = 0; i < 3; i++) {
       sun[i] *= k;
       sky[i] *= k;

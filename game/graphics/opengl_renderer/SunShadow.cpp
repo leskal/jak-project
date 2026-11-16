@@ -104,6 +104,10 @@ void setup_vao(GLuint vao, GLuint vertex_buffer, GLuint index_buffer) {
 SunShadow::~SunShadow() {
   free_target();
   free_far_target();
+  free_point_target();
+  if (m_point_program) {
+    glDeleteProgram(m_point_program);
+  }
   if (m_char_fbo[0]) {
     glDeleteFramebuffers(2, m_char_fbo);
     glDeleteTextures(2, m_char_tex);
@@ -431,86 +435,7 @@ void SunShadow::render(SharedRenderState* render_state, ScopedProfilerNode& prof
   const GLint use_tex_loc = glGetUniformLocation(sh.id(), "use_tex");
   glActiveTexture(GL_TEXTURE0);
 
-  auto draw_list = [&](const LevelData* lev, const tfrag3::StripDraw& draw, GLenum prim) {
-    if (draw_is_transparent(draw.mode)) {
-      return;
-    }
-    u32 count = draw_index_count(draw);
-    if (!count) {
-      return;
-    }
-    // textured, so cut-out leaves and fences cast the right shape
-    if (draw.tree_tex_id >= 0 && draw.tree_tex_id < (int)lev->textures.size()) {
-      glBindTexture(GL_TEXTURE_2D, lev->textures[draw.tree_tex_id]);
-      glUniform1i(use_tex_loc, 1);
-    } else {
-      glUniform1i(use_tex_loc, 0);
-    }
-    glDrawElements(prim, count, GL_UNSIGNED_INT,
-                   (void*)(sizeof(u32) * (size_t)draw.unpacked.idx_of_first_idx_in_full_buffer));
-    m_last_draw_calls++;
-    prof.add_draw_call();
-  };
-
-  auto draw_level = [&]() {
-  for (const LevelData* lev : render_state->loader->get_in_use_levels()) {
-    if (!lev || !lev->level) {
-      continue;
-    }
-    const auto& level = *lev->level;
-
-    // tfrag (ground, walls), best detail level only, normal (opaque) trees only
-    const auto& tfrags = level.tfrag_trees[0];
-    for (size_t ti = 0;
-         tfrag_casts && ti < tfrags.size() && ti < lev->tfrag_vertex_data[0].size(); ti++) {
-      const auto& tree = tfrags[ti];
-      if (tree.kind != tfrag3::TFragmentTreeKind::NORMAL || tree.unpacked.indices.empty()) {
-        continue;
-      }
-      auto& t = m_trees[{lev->load_id, 0, (int)ti}];
-      if (!t.vao) {
-        glGenVertexArrays(1, &t.vao);
-        glGenBuffers(1, &t.own_index_buffer);
-        glBindVertexArray(t.vao);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, t.own_index_buffer);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, tree.unpacked.indices.size() * sizeof(u32),
-                     tree.unpacked.indices.data(), GL_STATIC_DRAW);
-        setup_vao(t.vao, lev->tfrag_vertex_data[0][ti], t.own_index_buffer);
-      }
-      t.last_used_frame = m_frame;
-      glBindVertexArray(t.vao);
-      const GLenum prim = tree.use_strips ? GL_TRIANGLE_STRIP : GL_TRIANGLES;
-      for (const auto& draw : tree.draws) {
-        draw_list(lev, draw, prim);
-      }
-    }
-
-    // tie (objects: houses, rocks, fences...), best detail level, opaque categories only
-    const auto& ties = level.tie_trees[0];
-    for (size_t ti = 0; tie_casts && ti < ties.size() && ti < lev->tie_data[0].size(); ti++) {
-      const auto& tree = ties[ti];
-      if (tree.unpacked.indices.empty()) {
-        continue;
-      }
-      auto& t = m_trees[{lev->load_id, 1, (int)ti}];
-      if (!t.vao) {
-        glGenVertexArrays(1, &t.vao);
-        setup_vao(t.vao, lev->tie_data[0][ti].vertex_buffer, lev->tie_data[0][ti].index_buffer);
-      }
-      t.last_used_frame = m_frame;
-      glBindVertexArray(t.vao);
-      const GLenum prim = tree.use_strips ? GL_TRIANGLE_STRIP : GL_TRIANGLES;
-      for (auto cat : {tfrag3::TieCategory::NORMAL, tfrag3::TieCategory::NORMAL_ENVMAP}) {
-        const u32 first = tree.category_draw_indices[(int)cat];
-        const u32 last = tree.category_draw_indices[(int)cat + 1];
-        for (u32 di = first; di < last && di < tree.static_draws.size(); di++) {
-          draw_list(lev, tree.static_draws[di], prim);
-        }
-      }
-    }
-  }
-
-  };
+  auto draw_level = [&]() { draw_level_geometry(render_state, prof, use_tex_loc); };
   draw_level();
 
   // (AI-assisted) far shadow map: the same level, from the same sun, over a much bigger area,
@@ -566,6 +491,21 @@ void SunShadow::draw_debug_window() {
   ImGui::Checkbox("Sun shadows", &enabled);
   ImGui::SliderFloat("Shadow strength", &strength, 0.f, 1.f);
   ImGui::SliderFloat("Shadow area (m)", &half_size_m, 10.f, 200.f);
+  ImGui::Checkbox("Point light shadows", &point_shadows);
+  ImGui::SameLine();
+  ImGui::Text("(%d lights)", m_point_shadow_count);
+  ImGui::SliderInt("Point lights with shadows", &point_shadow_count, 1, kMaxPointShadows);
+  if (ImGui::RadioButton("256##pl", point_shadow_res == 256)) {
+    point_shadow_res = 256;
+  }
+  ImGui::SameLine();
+  if (ImGui::RadioButton("512##pl", point_shadow_res == 512)) {
+    point_shadow_res = 512;
+  }
+  ImGui::SameLine();
+  if (ImGui::RadioButton("1024##pl", point_shadow_res == 1024)) {
+    point_shadow_res = 1024;
+  }
   ImGui::Checkbox("Far shadows", &far_enabled);
   ImGui::SameLine();
   ImGui::SliderFloat("Far shadow area (m)", &far_half_size_m, 100.f, 1500.f);
@@ -626,4 +566,379 @@ void SunShadow::draw_overlay(SharedRenderState* render_state) {
   glBindVertexArray(m_quad_vao);
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+}
+
+// draws the level geometry (tfrag + tie, opaque, best detail) with whatever shadow shader is
+// active. Vertex attributes: 0 = position (world), 1 = texture coordinate. (AI-assisted)
+void SunShadow::draw_level_geometry(SharedRenderState* render_state,
+                                    ScopedProfilerNode& prof,
+                                    GLint use_tex_loc) {
+  auto draw_list = [&](const LevelData* lev, const tfrag3::StripDraw& draw, GLenum prim) {
+    if (draw_is_transparent(draw.mode)) {
+      return;
+    }
+    u32 count = draw_index_count(draw);
+    if (!count) {
+      return;
+    }
+    // textured, so cut-out leaves and fences cast the right shape
+    if (draw.tree_tex_id >= 0 && draw.tree_tex_id < (int)lev->textures.size()) {
+      glBindTexture(GL_TEXTURE_2D, lev->textures[draw.tree_tex_id]);
+      glUniform1i(use_tex_loc, 1);
+    } else {
+      glUniform1i(use_tex_loc, 0);
+    }
+    glDrawElements(prim, count, GL_UNSIGNED_INT,
+                   (void*)(sizeof(u32) * (size_t)draw.unpacked.idx_of_first_idx_in_full_buffer));
+    m_last_draw_calls++;
+    prof.add_draw_call();
+  };
+
+  for (const LevelData* lev : render_state->loader->get_in_use_levels()) {
+    if (!lev || !lev->level) {
+      continue;
+    }
+    const auto& level = *lev->level;
+
+    // tfrag (ground, walls), best detail level only, normal (opaque) trees only
+    const auto& tfrags = level.tfrag_trees[0];
+    for (size_t ti = 0;
+         tfrag_casts && ti < tfrags.size() && ti < lev->tfrag_vertex_data[0].size(); ti++) {
+      const auto& tree = tfrags[ti];
+      if (tree.kind != tfrag3::TFragmentTreeKind::NORMAL || tree.unpacked.indices.empty()) {
+        continue;
+      }
+      auto& t = m_trees[{lev->load_id, 0, (int)ti}];
+      if (!t.vao) {
+        glGenVertexArrays(1, &t.vao);
+        glGenBuffers(1, &t.own_index_buffer);
+        glBindVertexArray(t.vao);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, t.own_index_buffer);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, tree.unpacked.indices.size() * sizeof(u32),
+                     tree.unpacked.indices.data(), GL_STATIC_DRAW);
+        setup_vao(t.vao, lev->tfrag_vertex_data[0][ti], t.own_index_buffer);
+      }
+      t.last_used_frame = m_frame;
+      glBindVertexArray(t.vao);
+      const GLenum prim = tree.use_strips ? GL_TRIANGLE_STRIP : GL_TRIANGLES;
+      for (const auto& draw : tree.draws) {
+        draw_list(lev, draw, prim);
+      }
+    }
+
+    // tie (objects: houses, rocks, fences...), best detail level, opaque categories only
+    const auto& ties = level.tie_trees[0];
+    for (size_t ti = 0; tie_casts && ti < ties.size() && ti < lev->tie_data[0].size(); ti++) {
+      const auto& tree = ties[ti];
+      if (tree.unpacked.indices.empty()) {
+        continue;
+      }
+      auto& t = m_trees[{lev->load_id, 1, (int)ti}];
+      if (!t.vao) {
+        glGenVertexArrays(1, &t.vao);
+        setup_vao(t.vao, lev->tie_data[0][ti].vertex_buffer, lev->tie_data[0][ti].index_buffer);
+      }
+      t.last_used_frame = m_frame;
+      glBindVertexArray(t.vao);
+      const GLenum prim = tree.use_strips ? GL_TRIANGLE_STRIP : GL_TRIANGLES;
+      for (auto cat : {tfrag3::TieCategory::NORMAL, tfrag3::TieCategory::NORMAL_ENVMAP}) {
+        const u32 first = tree.category_draw_indices[(int)cat];
+        const u32 last = tree.category_draw_indices[(int)cat + 1];
+        for (u32 di = first; di < last && di < tree.static_draws.size(); di++) {
+          draw_list(lev, tree.static_draws[di], prim);
+        }
+      }
+    }
+  }
+
+}
+
+// ---------------------------------------------------------------------------------------------
+// (AI-assisted) point light shadows: a cube shadow map (6 directions) for each of the strongest
+// point lights, all in one cube map array. The level is drawn once; a geometry shader sends each
+// triangle to the cube faces of the lights it is near.
+namespace {
+const char* kPointVert = R"(#version 410 core
+layout (location = 0) in vec3 position_in;
+layout (location = 1) in vec2 tex_coord_in;
+out vec3 v_world;
+out vec2 v_tc;
+void main() {
+  v_world = position_in;
+  v_tc = tex_coord_in;
+  gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
+}
+)";
+
+const char* kPointGeom = R"(#version 410 core
+layout (triangles) in;
+layout (triangle_strip, max_vertices = 72) out;
+in vec3 v_world[];
+in vec2 v_tc[];
+uniform mat4 face_mat[6];
+uniform vec4 lights[4];  // xyz = position, w = reach (game units)
+uniform int light_count;
+out vec3 g_rel;
+out vec2 g_tc;
+flat out float g_inv_r;
+void main() {
+  vec3 mn = min(min(v_world[0], v_world[1]), v_world[2]);
+  vec3 mx = max(max(v_world[0], v_world[1]), v_world[2]);
+  for (int l = 0; l < light_count; l++) {
+    vec3 c = lights[l].xyz;
+    float R = lights[l].w;
+    vec3 dq = clamp(c, mn, mx) - c;
+    if (dot(dq, dq) > R * R) {
+      continue;  // triangle is out of this light's reach
+    }
+    vec3 rel[3];
+    for (int k = 0; k < 3; k++) {
+      rel[k] = v_world[k] - c;
+    }
+    for (int f = 0; f < 6; f++) {
+      vec4 cp[3];
+      for (int k = 0; k < 3; k++) {
+        cp[k] = face_mat[f] * vec4(rel[k], 1.0);
+      }
+      // skip faces the triangle is completely outside of
+      if (cp[0].x > cp[0].w && cp[1].x > cp[1].w && cp[2].x > cp[2].w) continue;
+      if (cp[0].x < -cp[0].w && cp[1].x < -cp[1].w && cp[2].x < -cp[2].w) continue;
+      if (cp[0].y > cp[0].w && cp[1].y > cp[1].w && cp[2].y > cp[2].w) continue;
+      if (cp[0].y < -cp[0].w && cp[1].y < -cp[1].w && cp[2].y < -cp[2].w) continue;
+      if (cp[0].w < 0.0 && cp[1].w < 0.0 && cp[2].w < 0.0) continue;
+      for (int k = 0; k < 3; k++) {
+        gl_Layer = l * 6 + f;
+        gl_Position = cp[k];
+        g_rel = rel[k];
+        g_tc = v_tc[k];
+        g_inv_r = 1.0 / R;
+        EmitVertex();
+      }
+      EndPrimitive();
+    }
+  }
+}
+)";
+
+const char* kPointFrag = R"(#version 410 core
+in vec3 g_rel;
+in vec2 g_tc;
+flat in float g_inv_r;
+uniform sampler2D tex_T0;
+uniform int use_tex;
+void main() {
+  if (use_tex == 1 && texture(tex_T0, g_tc).a < 0.2) {
+    discard;
+  }
+  // distance from the light, 0 = at the light, 1 = end of its reach
+  gl_FragDepth = clamp(length(g_rel) * g_inv_r, 0.0, 1.0);
+}
+)";
+
+GLuint compile_stage(GLenum type, const char* src) {
+  GLuint sh = glCreateShader(type);
+  glShaderSource(sh, 1, &src, nullptr);
+  glCompileShader(sh);
+  GLint ok = 0;
+  glGetShaderiv(sh, GL_COMPILE_STATUS, &ok);
+  if (!ok) {
+    char log[2048];
+    glGetShaderInfoLog(sh, sizeof(log), nullptr, log);
+    lg::error("SunShadow: point shadow shader compile failed: {}", log);
+    glDeleteShader(sh);
+    return 0;
+  }
+  return sh;
+}
+}  // namespace
+
+bool SunShadow::compile_point_program() {
+  if (m_point_program) {
+    return true;
+  }
+  if (m_point_compile_failed) {
+    return false;
+  }
+  GLuint vs = compile_stage(GL_VERTEX_SHADER, kPointVert);
+  GLuint gs = compile_stage(GL_GEOMETRY_SHADER, kPointGeom);
+  GLuint fs = compile_stage(GL_FRAGMENT_SHADER, kPointFrag);
+  if (!vs || !gs || !fs) {
+    m_point_compile_failed = true;
+    return false;
+  }
+  m_point_program = glCreateProgram();
+  glAttachShader(m_point_program, vs);
+  glAttachShader(m_point_program, gs);
+  glAttachShader(m_point_program, fs);
+  glLinkProgram(m_point_program);
+  glDeleteShader(vs);
+  glDeleteShader(gs);
+  glDeleteShader(fs);
+  GLint ok = 0;
+  glGetProgramiv(m_point_program, GL_LINK_STATUS, &ok);
+  if (!ok) {
+    char log[2048];
+    glGetProgramInfoLog(m_point_program, sizeof(log), nullptr, log);
+    lg::error("SunShadow: point shadow shader link failed: {}", log);
+    glDeleteProgram(m_point_program);
+    m_point_program = 0;
+    m_point_compile_failed = true;
+    return false;
+  }
+  return true;
+}
+
+void SunShadow::free_point_target() {
+  if (m_point_fbo) {
+    glDeleteFramebuffers(1, &m_point_fbo);
+    glDeleteTextures(1, &m_point_tex);
+    m_point_fbo = 0;
+    m_point_tex = 0;
+  }
+}
+
+void SunShadow::setup_point_target() {
+  free_point_target();
+  m_point_res = point_shadow_res;
+  glGenTextures(1, &m_point_tex);
+  glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, m_point_tex);
+  glTexImage3D(GL_TEXTURE_CUBE_MAP_ARRAY, 0, GL_DEPTH_COMPONENT32F, m_point_res, m_point_res,
+               6 * kMaxPointShadows, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+  glTexParameteri(GL_TEXTURE_CUBE_MAP_ARRAY, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+  glBindTexture(GL_TEXTURE_CUBE_MAP_ARRAY, 0);
+  glGenFramebuffers(1, &m_point_fbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, m_point_fbo);
+  glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, m_point_tex, 0);
+  glDrawBuffer(GL_NONE);
+  glReadBuffer(GL_NONE);
+  if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+    lg::error("SunShadow: point shadow framebuffer is incomplete");
+  }
+  lg::info("SunShadow: point light shadow maps {}x{} x{}", m_point_res, m_point_res,
+           kMaxPointShadows);
+}
+
+void SunShadow::render_point_shadows(SharedRenderState* render_state, ScopedProfilerNode& prof) {
+  auto& rl = render_state->relight;
+  const auto& pl = render_state->point_lights;
+  rl.pl_shadow_valid = false;
+  for (int i = 0; i < 16; i++) {
+    rl.pl_shadow_layer[i] = -1;
+  }
+  m_point_shadow_count = 0;
+  if (!point_shadows || pl.count <= 0 || !render_state->loader) {
+    return;
+  }
+  if (!compile_point_program()) {
+    return;
+  }
+
+  // pick the strongest lights near the camera
+  const float cam[3] = {render_state->camera_pos.x(), render_state->camera_pos.y(),
+                        render_state->camera_pos.z()};
+  std::vector<std::pair<float, int>> order;
+  for (int i = 0; i < pl.count && i < 16; i++) {
+    const float* c = &pl.color[i * 4];
+    const float* p = &pl.pos_radius[i * 4];
+    const float lum = 0.2126f * c[0] + 0.7152f * c[1] + 0.0722f * c[2];
+    float d2 = 0;
+    for (int k = 0; k < 3; k++) {
+      d2 += (p[k] - cam[k]) * (p[k] - cam[k]);
+    }
+    const float d_m = std::sqrt(d2) / 4096.f;
+    order.push_back({lum * (p[3] / 4096.f) / (1.f + d_m / 15.f), i});
+  }
+  std::sort(order.begin(), order.end(), [](auto& a, auto& b) { return a.first > b.first; });
+  const int n = std::min({(int)order.size(), std::clamp(point_shadow_count, 1, kMaxPointShadows)});
+  if (n <= 0) {
+    return;
+  }
+
+  auto p = prof.make_scoped_child("point-shadows");
+  ShadowStateSaver saved;
+  if (!m_point_fbo || m_point_res != point_shadow_res) {
+    setup_point_target();
+  }
+
+  // the 6 cube faces, OpenGL cube map order (+x, -x, +y, -y, +z, -z)
+  const float dirs[6][3] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+  const float ups[6][3] = {{0, -1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}, {0, -1, 0}, {0, -1, 0}};
+  const float near_z = 50.f;            // game units
+  const float far_z = 4096.f * 200.f;   // only for clipping; the stored depth is distance / reach
+  float face_mats[6 * 16];
+  for (int f = 0; f < 6; f++) {
+    const float* fw = dirs[f];
+    const float* up = ups[f];
+    float s[3] = {fw[1] * up[2] - fw[2] * up[1], fw[2] * up[0] - fw[0] * up[2],
+                  fw[0] * up[1] - fw[1] * up[0]};
+    float u[3] = {s[1] * fw[2] - s[2] * fw[1], s[2] * fw[0] - s[0] * fw[2],
+                  s[0] * fw[1] - s[1] * fw[0]};
+    float V[16] = {};  // column major, rotation only
+    for (int col = 0; col < 3; col++) {
+      V[col * 4 + 0] = s[col];
+      V[col * 4 + 1] = u[col];
+      V[col * 4 + 2] = -fw[col];
+    }
+    V[15] = 1.f;
+    float P[16] = {};  // 90 degree perspective
+    P[0] = 1.f;
+    P[5] = 1.f;
+    P[10] = (far_z + near_z) / (near_z - far_z);
+    P[11] = -1.f;
+    P[14] = 2.f * far_z * near_z / (near_z - far_z);
+    float* M = &face_mats[f * 16];
+    for (int col = 0; col < 4; col++) {
+      for (int row = 0; row < 4; row++) {
+        float sum = 0;
+        for (int k = 0; k < 4; k++) {
+          sum += P[k * 4 + row] * V[col * 4 + k];
+        }
+        M[col * 4 + row] = sum;
+      }
+    }
+  }
+
+  float lights[4 * kMaxPointShadows] = {};
+  for (int l = 0; l < n; l++) {
+    const int li = order[l].second;
+    for (int k = 0; k < 4; k++) {
+      lights[l * 4 + k] = pl.pos_radius[li * 4 + k];
+    }
+    rl.pl_shadow_layer[li] = l;
+  }
+
+  glBindFramebuffer(GL_FRAMEBUFFER, m_point_fbo);
+  glViewport(0, 0, m_point_res, m_point_res);
+  glDisable(GL_SCISSOR_TEST);
+  glDisable(GL_STENCIL_TEST);
+  glDisable(GL_BLEND);
+  glDisable(GL_CULL_FACE);
+  glDisable(GL_POLYGON_OFFSET_FILL);
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS);
+  glDepthMask(GL_TRUE);
+  glClearDepth(1.0);
+  glClear(GL_DEPTH_BUFFER_BIT);
+  glEnable(GL_PRIMITIVE_RESTART);
+  glPrimitiveRestartIndex(UINT32_MAX);
+
+  glUseProgram(m_point_program);
+  glUniformMatrix4fv(glGetUniformLocation(m_point_program, "face_mat"), 6, GL_FALSE, face_mats);
+  glUniform4fv(glGetUniformLocation(m_point_program, "lights"), kMaxPointShadows, lights);
+  glUniform1i(glGetUniformLocation(m_point_program, "light_count"), n);
+  glUniform1i(glGetUniformLocation(m_point_program, "tex_T0"), 0);
+  const GLint use_tex_loc = glGetUniformLocation(m_point_program, "use_tex");
+  glActiveTexture(GL_TEXTURE0);
+  draw_level_geometry(render_state, p, use_tex_loc);
+
+  rl.pl_shadow_valid = true;
+  rl.pl_shadow_tex = m_point_tex;
+  rl.pl_shadow_res = (float)m_point_res;
+  m_point_shadow_count = n;
 }
