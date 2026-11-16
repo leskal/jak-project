@@ -222,6 +222,7 @@ void SSAO::draw_quad() {
 void SSAO::render(SharedRenderState* render_state, ScopedProfilerNode& prof, int msaa) {
   // (AI-assisted) the depth copy is shared with the water (clear water, shore foam)
   render_state->relight.scene_depth_valid = false;
+  render_state->relight.scene_color_valid = false;
   if (!enabled) {
     return;
   }
@@ -425,6 +426,16 @@ void SSAO::render(SharedRenderState* render_state, ScopedProfilerNode& prof, int
     draw_quad();
     prof.add_draw_call();
     prof.add_tri(2);
+  }
+
+  // (AI-assisted) water: a copy of the finished image (with the darkening above) as it is before
+  // the water is drawn. The colour copy is free again now (bounce light is done with it).
+  if (render_state->relight.clear_water && debug_view == 0) {
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, render_state->render_fb);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, m_color_fbo);
+    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    render_state->relight.scene_color_tex = m_color_tex;
+    render_state->relight.scene_color_valid = true;
   }
   // GlStateSaver restores everything here
 }

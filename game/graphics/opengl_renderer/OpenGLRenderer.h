@@ -14,6 +14,7 @@
 #include "game/graphics/opengl_renderer/lighting_mod/SunShadow.h"
 #include "game/graphics/opengl_renderer/lighting_mod/GlowLight.h"
 #include "game/graphics/opengl_renderer/lighting_mod/PointLights.h"
+#include "game/graphics/opengl_renderer/lighting_mod/Bloom.h"
 #include "game/graphics/opengl_renderer/Shader.h"
 #include "game/graphics/opengl_renderer/TextureAnimator.h"
 #include "game/graphics/opengl_renderer/foreground/Generic2.h"
@@ -136,6 +137,7 @@ class OpenGLRenderer {
   SunShadow m_sun_shadow;  // (AI-assisted) relighting mod sun shadows
   GlowLight m_glow_light;  // (AI-assisted) glow light mod
   PointLights m_point_lights;  // (AI-assisted) point lights from glowing particles
+  Bloom m_bloom;               // (AI-assisted) glow around bright things
   AutoExposure m_auto_exposure;  // (AI-assisted) measured auto exposure
   CollideMeshRenderer m_collide_renderer;
 

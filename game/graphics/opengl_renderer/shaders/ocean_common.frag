@@ -130,6 +130,35 @@ vec2 ripple_slope(vec2 p, float t, float fp) {
   return s;
 }
 
+// (AI-assisted) sun shadow on the sea: the level's near and far sun shadow maps
+uniform sampler2DShadow sea_shadow_tex;
+uniform mat4 sea_shadow_mat;
+uniform int sea_shadow_on;
+uniform sampler2DShadow sea_far_shadow_tex;
+uniform mat4 sea_far_shadow_mat;
+uniform int sea_far_shadow_on;
+float glint_vis = 1.0;  // sun visibility for the sun glints
+
+bool sea_in_map(vec4 c) {
+  return c.x > 0.0 && c.x < 1.0 && c.y > 0.0 && c.y < 1.0 && c.z < 1.0;
+}
+float sea_shadow(vec3 wp) {
+  if (sea_shadow_on == 0) {
+    return 1.0;
+  }
+  vec4 sc = sea_shadow_mat * vec4(wp, 1.0);
+  if (sea_in_map(sc)) {
+    return texture(sea_shadow_tex, sc.xyz);
+  }
+  if (sea_far_shadow_on == 1) {
+    vec4 fc = sea_far_shadow_mat * vec4(wp, 1.0);
+    if (sea_in_map(fc)) {
+      return texture(sea_far_shadow_tex, fc.xyz);
+    }
+  }
+  return 1.0;
+}
+
 // light the water surface: sky reflection (stronger at grazing angles) and sun glints
 vec3 water_shade(vec3 base, vec3 N, vec3 V, vec3 sky_refl) {
   float ndv = max(dot(N, V), 0.0);
@@ -141,7 +170,7 @@ vec3 water_shade(vec3 base, vec3 N, vec3 V, vec3 sky_refl) {
   vec3 H = normalize(L + V);
   float spec = pow(max(dot(N, H), 0.0), 350.0) * 25.0;
   if (L.y > 0.0) {
-    col += sun_color * spec * water_spec * 0.25;
+    col += sun_color * spec * water_spec * 0.25 * glint_vis;  // (AI-assisted) none in shade
   }
   return col;
 }
@@ -190,6 +219,54 @@ vec3 frag_world() {
   return rel_world_h.xyz / rel_world_h.w + cam_trans;
 }
 
+// (AI-assisted) what is under the water: the image before the water was drawn
+uniform sampler2D scene_color;
+uniform int scene_color_on;
+uniform float water_absorb;    // per metre (Project Sandover's numbers: 0.03 x (1.6, 0.9, 0.5))
+uniform float water_refract;
+float g_trans = 0.0;           // how much of what is under the water shows (0..1)
+bool g_full = false;           // the water body is drawn here (written opaque)
+
+// world position of the scene before the water at a pixel
+vec3 scene_world_at(ivec2 px, out bool sky) {
+  float d = texelFetch(scene_depth, px, 0).r;
+  sky = d >= 0.99999;
+  vec2 ndc_xy = (vec2(px) + 0.5 - viewport.xy) / viewport.zw * 2.0 - 1.0;
+  float W = cam_params.x / (cam_params.y - (2.0 * d - 1.0));
+  vec3 c = vec3(-ndc_xy.x * W / cam_params.z, -ndc_xy.y * W / cam_params.w, -W / cam_pzw);
+  return transpose(cam_rot) * c + cam_trans;
+}
+
+// how much light from below gets through, per channel: red goes first; gone by 12 m depth
+vec3 water_transmit(float path_m, float depth_m) {
+  return exp(-water_absorb * vec3(1.6, 0.9, 0.5) * path_m) * (1.0 - smoothstep(0.0, 12.0, depth_m));
+}
+
+// the water body: what is under the water, bent by the waves, its colours fading with the path
+// through the water, filled with the water's own colour
+vec3 ocean_body(vec3 base, vec3 wp, vec3 N, float dist_m) {
+  ivec2 px0 = ivec2(gl_FragCoord.xy);
+  bool sky0;
+  vec3 bed0 = scene_world_at(px0, sky0);
+  float path0 = sky0 ? 1000.0 : length(bed0 - wp) / 4096.0;
+  vec3 bend = cam_rot * (N - vec3(0.0, 1.0, 0.0));
+  vec2 off = bend.xy * water_refract * viewport.w * 0.15 / max(dist_m, 1.5) * clamp(path0, 0.0, 1.5);
+  ivec2 px = clamp(ivec2(gl_FragCoord.xy + off), ivec2(0), textureSize(scene_color, 0) - 1);
+  bool sky1;
+  vec3 bed1 = scene_world_at(px, sky1);
+  float surf_d = length(wp - cam_trans);
+  if (!sky1 && length(bed1 - cam_trans) < surf_d) {  // in front of the water: don't bend
+    px = px0;
+    bed1 = bed0;
+    sky1 = sky0;
+  }
+  float path = sky1 ? 1000.0 : length(bed1 - wp) / 4096.0;
+  float depth = sky1 ? 1000.0 : (wp.y - bed1.y) / 4096.0;
+  vec3 T = water_transmit(path, depth);
+  g_trans = dot(T, vec3(1.0 / 3.0));
+  return texelFetch(scene_color, px, 0).rgb * T + base * (1.0 - T);
+}
+
 vec3 ocean_waves(vec3 base) {
   vec3 wp = frag_world();
   float dist_m = length(wp - cam_trans) / 4096.0;
@@ -205,8 +282,14 @@ vec3 ocean_waves(vec3 base) {
   vec3 wake = wake_field(wp / 4096.0, wave_time, fp);
   slope += wake.yz;
   vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
-  // reflected sky: the game's horizon color
-  vec3 col = water_shade(base, N, V, fog_color.rgb * 1.1);
+  // reflected sky: the game's horizon color. (AI-assisted) no sun glints in shade
+  glint_vis = sea_shadow(wp);
+  vec3 body = base;
+  if (bucket == 0 && scene_color_on == 1 && scene_depth_on == 1 && clear_depth_m > 0.0) {
+    body = ocean_body(base, wp, N, dist_m);
+    g_full = true;
+  }
+  vec3 col = water_shade(body, N, V, fog_color.rgb * 1.1);
   // (AI-assisted) wake crests: a soft light line (tiny foam / bright sky catching the crest)
   col += fog_color.rgb * clamp(wake.x * 5.0, 0.0, 0.3);
   return col;
@@ -214,12 +297,7 @@ vec3 ocean_waves(vec3 base) {
 
 // (AI-assisted) world position of the ground behind this pixel (from the scene depth)
 vec3 scene_world(out bool sky) {
-  float d = texelFetch(scene_depth, ivec2(gl_FragCoord.xy), 0).r;
-  sky = d >= 0.99999;
-  vec2 ndc_xy = (gl_FragCoord.xy - viewport.xy) / viewport.zw * 2.0 - 1.0;
-  float W = cam_params.x / (cam_params.y - (2.0 * d - 1.0));
-  vec3 c = vec3(-ndc_xy.x * W / cam_params.z, -ndc_xy.y * W / cam_params.w, -W / cam_pzw);
-  return transpose(cam_rot) * c + cam_trans;
+  return scene_world_at(ivec2(gl_FragCoord.xy), sky);
 }
 
 // (AI-assisted) the sea near the shore. Returns how opaque the water is there (0..1, multiplied
@@ -260,18 +338,34 @@ void ocean_shore(inout vec4 col, bool alpha_pass) {
     float lace = n1 * 0.55 + n2 * 0.3 + n3 * 0.15;      // about -0.6 .. 0.6
     // the edge line: only the last few centimetres, broken up
     float edge = (1.0 - smoothstep(0.0, 0.08, depth_m)) * smoothstep(-0.15, 0.2, lace);
+    // (AI-assisted) where the water meets rock: the view ray hits it just behind the surface
+    // (a cliff base is deep water, so the depth above misses it)
+    float ray_m = length(bed - wp) / 4096.0;
+    float contact = (1.0 - smoothstep(0.0, 0.3, ray_m)) * smoothstep(-0.25, 0.15, lace);
+    edge = max(edge, contact);
     // lace: patches that get rarer with depth, gone by ~0.35 m
     float lace_f = smoothstep(0.15, 0.35, lace + 0.25 - depth_m * 1.6);
     lace_f *= 1.0 - smoothstep(0.1, 0.35, depth_m);
     foam = clamp(max(edge * 0.8, lace_f * 0.55), 0.0, 1.0) * near * foam_strength;
   }
+  bool full = scene_color_on == 1 && clear_depth_m > 0.0;
   if (alpha_pass) {
-    col.a = max(col.a * a, foam * 0.7);
+    if (full) {
+      // the game's reflection layer (drawn next, weighted by this alpha): only where the water
+      // is deep enough to hide what is under it
+      vec3 T = water_transmit(length(bed - wp) / 4096.0, depth_m);
+      col.a = max(col.a * (1.0 - dot(T, vec3(1.0 / 3.0))), foam * 0.7);
+    } else {
+      col.a = max(col.a * a, foam * 0.7);
+    }
     return;
   }
   float sh = exp(-max(depth_m, 0.0) / 1.5) * shallow_tint * near;
+  if (full) {
+    sh *= 1.0 - g_trans;  // the lighter colour is the water's own: not on what shows through it
+  }
   col.rgb = mix(col.rgb, col.rgb * vec3(1.05, 1.3, 1.2) + vec3(0.02, 0.05, 0.05), sh);
-  col.a *= a;
+  col.a *= full ? 1.0 : a;
   vec3 foam_col = fog_color.rgb * 0.5 + sun_color * 0.2 + vec3(0.3);
   col.rgb = mix(col.rgb, foam_col, clamp(foam, 0.0, 0.85));
   col.a = max(col.a, foam * 0.7);
@@ -286,6 +380,9 @@ void main() {
       color.rgb = ocean_waves(color.rgb);
       if (scene_depth_on == 1) {
         ocean_shore(color, false);
+      }
+      if (g_full) {
+        color.a = 1.0;  // (AI-assisted) the water body includes what is under it
       }
     }
     color.rgb = mix(color.rgb, fog_color.rgb, clamp(fog_color.a * fog, 0, 1));

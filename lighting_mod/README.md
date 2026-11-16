@@ -21,8 +21,9 @@ inside OpenGOAL's own files is marked `(AI-assisted)`, and no AI pull requests g
 - **Glowing surfaces as lights**: fires, lava and lamps found in the level data when a level
   loads, flickering and pulsing with the game's own effects (see `kb/surface-lights.md`).
 - **Jak's soft shadows from point lights** (spheres on his skeleton).
-- **Water**: moving waves and ripples on the sea and inland water, sun glints, wakes around Jak,
-  clear shallow water and shore foam.
+- **Water**: moving waves and ripples on the sea and inland water, sun glints (none in shade),
+  wakes around Jak, clear shallow water, shore foam and a wet shoreline.
+- **Bloom**: a soft glow around bright things (fire, eco, lamps, the sun on water), not the HUD.
 - **Smoother level normals** (no lighting seams on the ground).
 
 ## Layout
@@ -54,7 +55,8 @@ search for `(AI-assisted)` to find them.
 | `PointLights` | lights from glowing particles and surfaces; flicker; Jak's shadow spheres |
 | `SurfaceLights` | finds a level's fires, lava and lamps when it loads |
 | `GlowLight` | older screen-space glow light |
-| `WaterWaves.h` | shared water settings: waves, wakes, clear water and foam |
+| `WaterWaves.h` | shared water settings: waves, wakes, clear water, foam, sea shadows |
+| `Bloom` | glow around bright things, after the particles and before the HUD |
 | `LightingSettings` | saving and loading the settings file |
 
 ## Credits

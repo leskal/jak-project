@@ -76,6 +76,19 @@ uniform sampler2D scene_depth;
 uniform int scene_depth_on;
 uniform float clear_depth_m;   // 0 = off
 uniform vec4 cam_params;       // x = depth k, y = depth a (W = k / (a - ndc_z))
+// (AI-assisted) what is under the water: the image before the water was drawn
+uniform sampler2D scene_color;
+uniform int scene_color_on;
+uniform float water_absorb;    // per metre (Project Sandover's numbers: 0.03 x (1.6, 0.9, 0.5))
+uniform float water_refract;
+uniform mat3 cam_rot;          // camera space = cam_rot * (world - cam_trans_m)
+
+// view depth (W) of the scene before the water at a pixel
+float scene_W(ivec2 px, out bool sky) {
+  float d = texelFetch(scene_depth, px, 0).r;
+  sky = d >= 0.99999;
+  return abs(cam_params.x / (cam_params.y - (2.0 * d - 1.0)));
+}
 #define water_viewport_h viewport.w
 
 // ---- (AI-assisted) water waves ----
@@ -174,6 +187,7 @@ vec2 ripple_slope(vec2 p, float t, float fp) {
 }
 
 // light the water surface: sky reflection (stronger at grazing angles) and sun glints
+float glint_vis = 1.0;  // (AI-assisted) sun visibility for the water's sun glints
 vec3 water_shade(vec3 base, vec3 N, vec3 V, vec3 sky_refl) {
   float ndv = max(dot(N, V), 0.0);
   float F = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
@@ -184,7 +198,7 @@ vec3 water_shade(vec3 base, vec3 N, vec3 V, vec3 sky_refl) {
   vec3 H = normalize(L + V);
   float spec = pow(max(dot(N, H), 0.0), 350.0) * 25.0;
   if (L.y > 0.0) {
-    col += sun_color * spec * water_spec * 0.25;
+    col += sun_color * spec * water_spec * 0.25 * glint_vis;  // (AI-assisted) none in shade
   }
   return col;
 }
@@ -428,13 +442,47 @@ void main() {
     vec3 wake = wake_field(merc_world / 4096.0, wave_time, fp);
     slope += wake.yz;
     vec3 N = normalize(vec3(-slope.x, 1.0, -slope.y));
-    color.rgb = water_shade(color.rgb, N, V, fog_color.rgb * 1.1);
+    glint_vis = sun_vis;  // (AI-assisted) no sun glints where the water is in shade
+    vec3 body = color.rgb;
+    bool full = scene_color_on == 1 && clear_depth_m > 0.0;
+    float trans = 0.0;
+    if (full) {
+      // (AI-assisted) the water body: what is under the water, bent by the waves, its colours
+      // fading with the path through the water (red first), filled with the water's own colour.
+      // Written opaque (Merc2 switches these draws to replace).
+      ivec2 px0 = ivec2(gl_FragCoord.xy);
+      float Ws = abs(cam_params.x / (cam_params.y - (2.0 * gl_FragCoord.z - 1.0)));
+      float to_m = length(merc_world - cam_trans_m) / max(Ws, 1e-3) / 4096.0;
+      bool sky0;
+      float W0 = scene_W(px0, sky0);
+      float path0 = sky0 ? 1000.0 : max(W0 - Ws, 0.0) * to_m;
+      vec3 bend = cam_rot * (N - vec3(0.0, 1.0, 0.0));
+      vec2 off = bend.xy * water_refract * viewport.w * 0.15 / max(dist_m, 1.5) *
+                 clamp(path0, 0.0, 1.5);
+      ivec2 px = clamp(ivec2(gl_FragCoord.xy + off), ivec2(0), textureSize(scene_color, 0) - 1);
+      bool sky1;
+      float W1 = scene_W(px, sky1);
+      if (W1 <= Ws) {  // the bent pixel shows something in front of the water: don't bend
+        px = px0;
+        W1 = W0;
+        sky1 = sky0;
+      }
+      float path = sky1 ? 1000.0 : max(W1 - Ws, 0.0) * to_m;
+      vec3 T = exp(-water_absorb * vec3(1.6, 0.9, 0.5) * path) * (1.0 - smoothstep(0.0, 12.0, path));
+      body = texelFetch(scene_color, px, 0).rgb * T + color.rgb * (1.0 - T);
+      trans = dot(T, vec3(1.0 / 3.0));
+    }
+    color.rgb = water_shade(body, N, V, fog_color.rgb * 1.1);
     color.rgb += fog_color.rgb * clamp(wake.x * 5.0, 0.0, 0.3);  // light line on wake crests
 
     // (AI-assisted) clear water: how far the view goes through the water to the ground below
     // decides how much of the game's water colour covers it. Clear at the edge, the game's own
     // colour where deep; a little surface sheen stays everywhere.
-    if (scene_depth_on == 1 && clear_depth_m > 0.0) {
+    if (full) {
+      // the game's reflection layer (drawn next, weighted by this alpha): only where the water is
+      // deep enough to hide what is under it
+      color.a = color.a * (1.0 - trans);
+    } else if (scene_depth_on == 1 && clear_depth_m > 0.0) {
       float d = texelFetch(scene_depth, ivec2(gl_FragCoord.xy), 0).r;
       float Wb = abs(cam_params.x / (cam_params.y - (2.0 * d - 1.0)));
       float Ws = abs(cam_params.x / (cam_params.y - (2.0 * gl_FragCoord.z - 1.0)));

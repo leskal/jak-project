@@ -92,6 +92,7 @@ set(RUNTIME_SOURCE
         graphics/opengl_renderer/lighting_mod/SurfaceLights.cpp
         graphics/opengl_renderer/lighting_mod/SSAO.cpp
         graphics/opengl_renderer/lighting_mod/SunShadow.cpp
+        graphics/opengl_renderer/lighting_mod/Bloom.cpp
         graphics/opengl_renderer/sprite/GlowRenderer.cpp
         graphics/opengl_renderer/sprite/Sprite3_Distort.cpp
         graphics/opengl_renderer/sprite/Sprite3_Glow.cpp

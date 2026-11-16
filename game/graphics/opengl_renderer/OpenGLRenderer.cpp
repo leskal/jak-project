@@ -992,7 +992,13 @@ void OpenGLRenderer::render(DmaFollower dma, const RenderOptions& settings) {
                              m_render_state.relight);
       s_lighting_settings_loaded = true;
     }
-    m_render_state.sprite_hook = [this](int stage) { m_glow_light.stage(stage, &m_render_state); };
+    m_render_state.sprite_hook = [this](int stage) {
+      m_glow_light.stage(stage, &m_render_state);
+      // (AI-assisted) bloom: after the particles (they glow), before the HUD (it doesn't)
+      if (stage == 1) {
+        m_bloom.render(&m_render_state);
+      }
+    };
   }
   m_profiler.clear();
   m_render_state.reset();
@@ -1210,6 +1216,15 @@ void OpenGLRenderer::draw_renderer_selection_window() {
     m_ssao.draw_debug_window();
     ImGui::TreePop();
   }
+  // (AI-assisted) bloom settings
+  if (ImGui::TreeNode("Bloom (glow around bright things)")) {
+    auto& rl = m_render_state.relight;
+    ImGui::Checkbox("Bloom", &rl.bloom_on);
+    ImGui::SliderFloat("Bloom threshold", &rl.bloom_threshold, 0.5f, 1.f);
+    ImGui::SliderFloat("Bloom strength", &rl.bloom_strength, 0.f, 2.f);
+    ImGui::SliderInt("Bloom size", &rl.bloom_size, 2, 6);
+    ImGui::TreePop();
+  }
 
   // (AI-assisted) point lights from glowing particles
   if (ImGui::TreeNode("Point lights (light from glowing particles)")) {
@@ -1246,6 +1261,8 @@ void OpenGLRenderer::draw_renderer_selection_window() {
         // (AI-assisted) clear shallow water and shore foam
         ImGui::Checkbox("Clear shallow water", &rl.clear_water);
         ImGui::SliderFloat("Clear water depth (m)", &rl.clear_water_depth_m, 0.2f, 6.f);
+        ImGui::SliderFloat("Water colour with depth", &rl.water_absorb, 0.f, 5.f);
+        ImGui::SliderFloat("Refraction (bending under water)", &rl.water_refract, 0.f, 3.f);
         ImGui::Checkbox("Shore foam", &rl.shore_foam);
         ImGui::SliderFloat("Foam strength", &rl.foam_strength, 0.f, 2.f);
         ImGui::SliderFloat("Shallow water tint", &rl.shallow_tint, 0.f, 1.f);

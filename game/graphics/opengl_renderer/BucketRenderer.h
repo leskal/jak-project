@@ -123,9 +123,20 @@ struct SharedRenderState {
     float wet_band_m = 1.0f;      // height of the wet band above the sea on flat ground
     float wet_dark = 0.68f;       // brightness of fully wet ground (1 = no change)
     float sea_seen_time = -100.f; // when the sea was last drawn (water_wave_time(), seconds)
+    // (AI-assisted) bloom: soft glow around bright things (lighting_mod/Bloom.h)
+    bool bloom_on = true;
+    float bloom_threshold = 0.85f;  // brightness (brightest colour channel, 0..1) where it starts
+    float bloom_strength = 0.6f;
+    int bloom_size = 5;             // how far the glow spreads (2..6)
     // the depth of the scene before the water is drawn (copied by SSAO after bucket 55)
     GLuint scene_depth_tex = 0;
     bool scene_depth_valid = false;
+    // the finished image before the water is drawn (SSAO, after its darkening): the water draws
+    // what is under it itself (bent by the waves, colours fading with depth)
+    GLuint scene_color_tex = 0;
+    bool scene_color_valid = false;
+    float water_absorb = 1.f;     // colour absorption, 1 = 0.03 per metre (red 1.6, green 0.9, blue 0.5)
+    float water_refract = 1.f;    // how much the waves bend what is under the water
     // (runtime) where Jak is, from his model (meters, world)
     bool jak_valid = false;
     float jak_pos_m[3] = {0, 0, 0};

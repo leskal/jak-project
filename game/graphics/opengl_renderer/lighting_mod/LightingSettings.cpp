@@ -89,6 +89,12 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(r, "wet_shore", rl.wet_shore);
     get_if(r, "wet_band_m", rl.wet_band_m);
     get_if(r, "wet_dark", rl.wet_dark);
+    get_if(r, "water_absorb", rl.water_absorb);
+    get_if(r, "water_refract", rl.water_refract);
+    get_if(r, "bloom_on", rl.bloom_on);
+    get_if(r, "bloom_threshold", rl.bloom_threshold);
+    get_if(r, "bloom_strength", rl.bloom_strength);
+    get_if(r, "bloom_size", rl.bloom_size);
     get_if(r, "auto_exposure_amount", rl.auto_exposure_amount);
     get_if(r, "auto_exposure_target", rl.auto_exposure_target);
     get_if(r, "auto_exposure_speed_s", rl.auto_exposure_speed_s);
@@ -208,6 +214,12 @@ bool lighting_settings_save(const SSAO& ssao,
                   {"wet_shore", rl.wet_shore},
                   {"wet_band_m", rl.wet_band_m},
                   {"wet_dark", rl.wet_dark},
+                  {"water_absorb", rl.water_absorb},
+                  {"water_refract", rl.water_refract},
+                  {"bloom_on", rl.bloom_on},
+                  {"bloom_threshold", rl.bloom_threshold},
+                  {"bloom_strength", rl.bloom_strength},
+                  {"bloom_size", rl.bloom_size},
                   {"auto_exposure_amount", rl.auto_exposure_amount},
                   {"auto_exposure_target", rl.auto_exposure_target},
                   {"auto_exposure_speed_s", rl.auto_exposure_speed_s},

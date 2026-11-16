@@ -196,5 +196,37 @@ inline bool set_water_uniforms(GLuint prog, SharedRenderState* rs) {
   glUniform1f(loc("clear_depth_m"), rl.clear_water ? std::max(rl.clear_water_depth_m, 0.05f) : 0.f);
   glUniform1f(loc("foam_strength"), rl.shore_foam ? rl.foam_strength : 0.f);
   glUniform1f(loc("shallow_tint"), rl.shallow_tint);
+  // (AI-assisted) what is under the water (the image before the water) on unit 13
+  const bool color_on = depth_on && rl.clear_water && rl.scene_color_valid && rl.scene_color_tex;
+  glUniform1i(loc("scene_color_on"), color_on ? 1 : 0);
+  if (color_on) {
+    glActiveTexture(GL_TEXTURE13);
+    glBindTexture(GL_TEXTURE_2D, rl.scene_color_tex);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(loc("scene_color"), 13);
+  }
+  glUniform1f(loc("water_absorb"), 0.03f * rl.water_absorb);
+  glUniform1f(loc("water_refract"), rl.water_refract);
+
+  // (AI-assisted) the sun shadow maps, so the sea has no sun glints in shade (units 6 and 8, as
+  // for the level). Own names: the inland water (merc) has its own shadow lookup and settings.
+  const GLint sea_loc = loc("sea_shadow_on");
+  if (sea_loc >= 0) {
+    glUniform1i(loc("sea_shadow_tex"), 6);
+    glUniform1i(loc("sea_far_shadow_tex"), 8);
+    glUniform1i(sea_loc, rl.shadow_valid ? 1 : 0);
+    glUniform1i(loc("sea_far_shadow_on"), rl.shadow_valid && rl.far_shadow_valid ? 1 : 0);
+  }
+  if (sea_loc >= 0 && rl.shadow_valid) {
+    glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_2D, rl.shadow_tex);
+    glUniformMatrix4fv(loc("sea_shadow_mat"), 1, GL_FALSE, rl.shadow_mat);
+    if (rl.far_shadow_valid) {
+      glActiveTexture(GL_TEXTURE8);
+      glBindTexture(GL_TEXTURE_2D, rl.far_shadow_tex);
+      glUniformMatrix4fv(loc("sea_far_shadow_mat"), 1, GL_FALSE, rl.far_shadow_mat);
+    }
+    glActiveTexture(GL_TEXTURE0);
+  }
   return true;
 }

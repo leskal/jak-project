@@ -1523,6 +1523,12 @@ void Merc2::do_draws(const Draw* draw_array,
   const GLint is_water_loc = glGetUniformLocation(current_program, "is_water");
   int last_water = -1;
   const GLint occ_self_loc = glGetUniformLocation(current_program, "pl_occ_self");
+  // (AI-assisted) inland water with the full water shading draws what is under it itself
+  // (merc2.frag), so it replaces instead of blending; the alpha it writes weights the game's
+  // reflection layer drawn after it
+  const auto& wrl = render_state->relight;
+  const bool water_full = is_water_loc >= 0 && wrl.water_waves && wrl.clear_water &&
+                          wrl.scene_color_valid && wrl.scene_depth_valid;
   int last_occ_self = -1;
 
   for (u32 di = 0; di < num_draws; di++) {
@@ -1655,6 +1661,9 @@ void Merc2::do_draws(const Draw* draw_array,
 
     } else {
       setup_opengl_from_draw_mode(draw.mode, GL_TEXTURE0, use_mipmaps_for_filtering);
+      if (water_full && (draw.flags & WATER_WAVES)) {
+        glBlendFuncSeparate(GL_ONE, GL_ZERO, GL_ONE, GL_ZERO);  // (AI-assisted)
+      }
       prof.add_draw_call();
       prof.add_tri(draw.num_triangles);
       glBindBufferRange(GL_UNIFORM_BUFFER, 1, m_bones_buffer,
