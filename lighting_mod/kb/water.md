@@ -38,9 +38,12 @@ ISC licence, credited in README. Settings under Water:
 - **Light through waves** (1): crests x (1 + 0.25 h), troughs darker; subsurface
   0.6 x max(h, 0) x (0.35 + 1.4 x back-light^3) on a lightened water colour. h = wave height /
   (0.65 x amplitude).
-- **Foam on wave crests** (0.8): our waves are sums of sines, not Gerstner, so their Jacobian is
-  approximated as J = 1 - 2.5 x sum(a k sin(phase)) (the curvature); foam where J < 0.9 and
-  h > 0.2, cut from three drifting noise octaves; none in the first 1.5 m or past 200 m.
+- **Foam on wave crests** (0.5): first version (J with a 2.5x factor, foam below 0.9) made solid
+  white blobs on our calm sea. Now steep waves only: J = 1 - sum(a k sin(phase)), the real
+  steepness, foam ramps in from J 0.7 to 0.45. The default 0.35 m swell never gets below ~0.75,
+  so no foam; at Wave height ~1 m a few percent of the sea. Streaks stretched along the crests
+  (across the main wave direction), holes from a finer noise, and the crest of 0.7 s ago counts
+  at half so the foam lingers behind it. None in the first 1.5 m or past 200 m.
 - **Hide sea texture repeat** (1): Mikkelsen hex tiling copied from Sandover: 56 m triangle grid,
   3 samples rotated up to 180 degrees, weights^5, textureGrad with the world uv's derivatives.
   Near colour and alpha passes and the mid ocean; not the envmap pass.

@@ -322,29 +322,41 @@ vec2 wave_crest_info(vec2 p, float t, float amp, float fp, float s) {
     float ph = k * dot(WAVE_DIR[i], p) - w * t + WAVE_PHASE[i];
     float a = amp * WAVE_AMP[i];
     r.x += a * sin(ph);
-    r.y -= 2.5 * a * k * s * sin(ph) * wave_aa(WAVE_LEN[i], fp);  // fp in the same scaled units
+    r.y -= a * k * s * sin(ph) * wave_aa(WAVE_LEN[i], fp);  // fp in the same scaled units
   }
   return r;
 }
 
-// (AI-assisted) foam where the sea's waves bunch up, cut from a drifting noise (Sandover's
-// crest foam: threshold 0.9, none in the first metres or far away)
+// (AI-assisted) foam where the sea's waves bunch up (after Sandover's crest foam). Only on steep
+// waves: J is the real steepness measure (1 - sum of a k sin), so on the default calm swell
+// (0.35 m) it never drops below about 0.75 and there is no foam; with Wave height around 1 m
+// a few percent of the sea has whitecaps. The foam is cut into broken streaks along the crests,
+// with holes, and lingers behind a crest for a moment (the crest of 0.7 s ago counts at half).
 uniform float crest_foam;
-float crest_foam_mask(vec2 p, float J, float h, float dist_m, float fp) {
+float crest_foam_mask(vec2 p, float J, float J_before, float h, float dist_m, float fp) {
   if (crest_foam <= 0.0) {
     return 0.0;
   }
-  float c = (1.0 - smoothstep(0.65, 0.9, J)) * smoothstep(0.2, 0.7, h);
+  float c = (1.0 - smoothstep(0.45, 0.7, J)) * smoothstep(0.1, 0.5, h);
+  c = max(c, 0.5 * (1.0 - smoothstep(0.45, 0.7, J_before)));
   c *= smoothstep(1.5, 6.0, dist_m) * (1.0 - smoothstep(80.0, 200.0, dist_m));
   float t = wave_time;
+  // streaks: the noise is stretched along the crests (across the main wave direction)
+  vec2 d = WAVE_DIR[0];
+  vec2 q = vec2(dot(p, d) * 2.5, dot(p, vec2(-d.y, d.x)) * 0.8);
   vec3 a = vec3(0.55, 0.3, 0.15) *
-           vec3(wave_aa(1.0 / 2.3, fp), wave_aa(1.0 / 5.9, fp), wave_aa(1.0 / 13.1, fp));
-  float n = 0.5 + a.x * rip_noise(p * 2.3 + vec2(0.13, 0.07) * t).x * 1.4 +
-            a.y * rip_noise(p * 5.9 - vec2(0.05, 0.11) * t).x * 1.4 +
-            a.z * rip_noise(p * 13.1 + vec2(0.09, -0.04) * t).x * 1.4;
+           vec3(wave_aa(0.4, fp), wave_aa(0.17, fp), wave_aa(0.08, fp));
+  float n = 0.5 + a.x * rip_noise(q + vec2(0.13, 0.07) * t).x * 1.4 +
+            a.y * rip_noise(q * 2.6 - vec2(0.05, 0.11) * t).x * 1.4 +
+            a.z * rip_noise(q * 5.7 + vec2(0.09, -0.04) * t).x * 1.4;
   float cc = 1.0 - 0.6 * c;
   float aa = 0.5 * fwidth(n - cc);
-  return crest_foam * smoothstep(cc - aa, cc + 0.06 + aa, n);
+  float foam = smoothstep(cc - aa, cc + 0.06 + aa, n);
+  // holes: a finer noise breaks the streaks into mottled foam
+  float holes = smoothstep(-0.15, 0.15, rip_noise(p * 9.0 - vec2(0.2, 0.1) * t).x) *
+                    wave_aa(0.11, fp) +
+                (1.0 - wave_aa(0.11, fp)) * 0.6;
+  return crest_foam * foam * holes;
 }
 
 uniform int wave_lake;  // (AI-assisted) 1 = the sunken city: small, slow waves (Sandover's lake set)
@@ -370,7 +382,11 @@ vec3 ocean_waves(vec3 base) {
   vec2 slope = ws * wave_slope_aa(p * ws, wave_time * sqrt(ws), amp, fp * ws);
   vec2 hj = wave_crest_info(p * ws, wave_time * sqrt(ws), amp, fp * ws, ws);
   g_wave_h = hj.x / max(amp * 0.65, 1e-3);
-  float cfoam = wave_lake == 1 ? 0.0 : crest_foam_mask(p, hj.y, g_wave_h, dist_m, fp);
+  float cfoam = 0.0;
+  if (wave_lake == 0 && crest_foam > 0.0) {
+    float J_before = wave_crest_info(p, wave_time - 0.7, amp, fp, 1.0).y;
+    cfoam = crest_foam_mask(p, hj.y, J_before, g_wave_h, dist_m, fp);
+  }
   slope += ripple_slope(p, wave_time, fp) * ripple_strength;
   vec3 wake = wake_field(wp / 4096.0, wave_time, fp);
   slope += wake.yz;

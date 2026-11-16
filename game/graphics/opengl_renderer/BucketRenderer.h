@@ -140,7 +140,7 @@ struct SharedRenderState {
     // (AI-assisted) ported from Project Sandover (ISC licence)
     float sky_gradient = 0.6f;    // reflection: 0 = flat fog colour, 1 = sky gradient + sun glow
     float wave_light = 1.f;       // light through wave tops, lighter crests, darker troughs
-    float crest_foam = 0.8f;      // foam where the sea's waves bunch up
+    float crest_foam = 0.5f;      // whitecaps on steep waves only (none on the default calm sea)
     float hex_tiling = 1.f;       // hide the repeat of the sea texture
     bool lake_waves = true;       // small, slow waves on the sunken city's water
     bool wet_mud = true;          // Misty's quicksand looks like wet mud
