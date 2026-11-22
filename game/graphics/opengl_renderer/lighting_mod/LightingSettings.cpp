@@ -58,6 +58,15 @@ bool lighting_settings_load(SSAO& ssao,
     get_if(s, "sun_aware", ssao.sun_aware);
     get_if(s, "ao_sun_protect", ssao.ao_sun_protect);
     get_if(s, "gi_sun_reduce", ssao.gi_sun_reduce);
+    get_if(s, "max_darkening", ssao.max_darkening);  // (AI-assisted)
+    get_if(s, "fog_fade", ssao.fog_fade);
+    get_if(s, "light_protect", ssao.light_protect);
+    get_if(s, "light_protect_m", ssao.light_protect_m);
+    get_if(s, "gtao", ssao.gtao);
+    get_if(s, "gtao_slices", ssao.gtao_slices);
+    get_if(s, "gtao_steps", ssao.gtao_steps);
+    get_if(s, "gtao_radius_m", ssao.gtao_radius_m);
+    get_if(s, "gtao_intensity", ssao.gtao_intensity);
   }
   if (j.contains("relight")) {
     const auto& r = j.at("relight");
@@ -189,7 +198,16 @@ bool lighting_settings_save(const SSAO& ssao,
                {"gi_radius_m", ssao.gi_radius_m},
                {"sun_aware", ssao.sun_aware},
                {"ao_sun_protect", ssao.ao_sun_protect},
-               {"gi_sun_reduce", ssao.gi_sun_reduce}};
+               {"gi_sun_reduce", ssao.gi_sun_reduce},
+               {"max_darkening", ssao.max_darkening},  // (AI-assisted)
+               {"fog_fade", ssao.fog_fade},
+               {"light_protect", ssao.light_protect},
+               {"light_protect_m", ssao.light_protect_m},
+               {"gtao", ssao.gtao},
+               {"gtao_slices", ssao.gtao_slices},
+               {"gtao_steps", ssao.gtao_steps},
+               {"gtao_radius_m", ssao.gtao_radius_m},
+               {"gtao_intensity", ssao.gtao_intensity}};
   j["relight"] = {{"amount", rl.amount},
                   {"sun_azimuth_deg", rl.sun_azimuth_deg},
                   {"sun_elevation_deg", rl.sun_elevation_deg},

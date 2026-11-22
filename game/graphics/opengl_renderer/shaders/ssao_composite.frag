@@ -15,11 +15,17 @@ uniform float max_distance;
 uniform int debug_view;       // 0 = normal, 1 = AO only, 2 = depth, 3 = GI only
 uniform int gi_enabled;
 uniform float gi_strength;
+uniform float max_darkening;  // (AI-assisted) AO never darkens more than this
 
 void main() {
   vec2 s = texture(ao_tex, tex_coord).rg;
   vec3 gi = gi_enabled == 1 ? texture(gi_tex, tex_coord).rgb * gi_strength : vec3(0.0);
-  float ao = mix(1.0, s.r, strength);
+  // (AI-assisted) after Project Sandover (ISC licence): darkening eases into a cap (theirs is
+  // 0.8) instead of going to black: about the same as before for light AO, never darker than the cap
+  float dark = strength * (1.0 - s.r);
+  float cap = max(max_darkening, 0.01);
+  dark = cap * (1.0 - exp(-dark / cap));
+  float ao = 1.0 - dark;
   out_mul = vec4(ao, ao, ao, 1.0);
 
   if (debug_view == 1) {

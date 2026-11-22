@@ -317,6 +317,12 @@ void SSAO::render(SharedRenderState* render_state, ScopedProfilerNode& prof, int
     glUniform1i(glGetUniformLocation(id, "color_tex"), 1);
     glUniform1i(glGetUniformLocation(id, "gi_enabled"), gi_enabled ? 1 : 0);
     glUniform1f(glGetUniformLocation(id, "gi_radius"), gi_radius_m);
+    // (AI-assisted) GTAO (XeGTAO via Project Sandover)
+    glUniform1i(glGetUniformLocation(id, "ao_method"), gtao ? 1 : 0);
+    glUniform1i(glGetUniformLocation(id, "gtao_slices"), std::clamp(gtao_slices, 1, 4));
+    glUniform1i(glGetUniformLocation(id, "gtao_steps"), std::clamp(gtao_steps, 1, 6));
+    glUniform1f(glGetUniformLocation(id, "gtao_radius"), gtao_radius_m);
+    glUniform1f(glGetUniformLocation(id, "gtao_intensity"), gtao_intensity);
 
     // sun aware: rebuild world positions exactly like the level renderers' projection
     // (see make_new_cam_mat in background_common.cpp) and look them up in the sun shadow map
@@ -324,7 +330,10 @@ void SSAO::render(SharedRenderState* render_state, ScopedProfilerNode& prof, int
     const bool sun_on = sun_aware && rl.shadow_valid && render_state->has_pc_data;
     glUniform1i(glGetUniformLocation(id, "shadow_tex"), 3);
     glUniform1i(glGetUniformLocation(id, "sun_aware"), sun_on ? 1 : 0);
-    if (sun_on) {
+    // (AI-assisted) world positions are also needed for the fog fade and the light protection
+    const bool world_ok = render_state->has_pc_data;
+    glUniform1i(glGetUniformLocation(id, "world_ok"), world_ok ? 1 : 0);
+    if (world_ok) {
       float cam_rot[9];
       for (int c = 0; c < 3; c++) {
         for (int r = 0; r < 3; r++) {
@@ -337,6 +346,28 @@ void SSAO::render(SharedRenderState* render_state, ScopedProfilerNode& prof, int
       glUniform4f(glGetUniformLocation(id, "cam_params"), depth_k, depth_a, pc_pxx,
                   pc_pyy * y_adjust);
       glUniform1f(glGetUniformLocation(id, "cam_pzw"), pzw);
+      // the game's fog, exactly as the level shaders work it out (tfrag3.vert): the clip w of a
+      // point is the camera matrix's last column (make_new_cam_mat: rot[row][2] * pzw)
+      glUniform1i(glGetUniformLocation(id, "fog_fade"), fog_fade ? 1 : 0);
+      glUniform3f(glGetUniformLocation(id, "fog_w_row"), render_state->camera_rot[0][2] * pzw,
+                  render_state->camera_rot[1][2] * pzw, render_state->camera_rot[2][2] * pzw);
+      glUniform3f(glGetUniformLocation(id, "fog_params"), render_state->camera_hvdf_off.w(),
+                  render_state->camera_fog.y(), render_state->camera_fog.z());
+      glUniform1f(glGetUniformLocation(id, "fog_mult"), render_state->fog_intensity / 255.f);
+      // the point lights (fires, lamps, lava, eco) of this frame
+      const auto& pl = render_state->point_lights;
+      const int n = light_protect ? pl.count : 0;
+      glUniform1i(glGetUniformLocation(id, "pl_count"), n);
+      if (n > 0) {
+        glUniform4fv(glGetUniformLocation(id, "pl_pos_radius"), n, pl.pos_radius);
+        glUniform4fv(glGetUniformLocation(id, "pl_color"), n, pl.color);
+      }
+      glUniform1f(glGetUniformLocation(id, "light_protect_m"), light_protect_m);
+    } else {
+      glUniform1i(glGetUniformLocation(id, "pl_count"), 0);
+      glUniform1i(glGetUniformLocation(id, "fog_fade"), 0);
+    }
+    if (sun_on) {
       glUniformMatrix4fv(glGetUniformLocation(id, "shadow_mat"), 1, GL_FALSE, rl.shadow_mat);
       glUniform1f(glGetUniformLocation(id, "shadow_normal_offset"), rl.shadow_normal_offset);
       float L[3];
@@ -411,6 +442,7 @@ void SSAO::render(SharedRenderState* render_state, ScopedProfilerNode& prof, int
     glUniform1i(glGetUniformLocation(id, "debug_view"), debug_view);
     glUniform1i(glGetUniformLocation(id, "gi_enabled"), gi_enabled ? 1 : 0);
     glUniform1f(glGetUniformLocation(id, "gi_strength"), gi_strength);
+    glUniform1f(glGetUniformLocation(id, "max_darkening"), max_darkening);  // (AI-assisted)
     if (debug_view == 0) {
       // "dual source" blend: result = bounce_light + image * ao.
       // The shader's first output is the light to add, the second is the AO multiplier.
@@ -458,6 +490,16 @@ void SSAO::draw_debug_window() {
   ImGui::Checkbox("Sun aware (needs Relighting + Sun shadows)", &sun_aware);
   ImGui::SliderFloat("Less AO in sun", &ao_sun_protect, 0.f, 1.f);
   ImGui::SliderFloat("Less GI in sun", &gi_sun_reduce, 0.f, 1.f);
+  // (AI-assisted) after Project Sandover
+  ImGui::SliderFloat("Darkest AO (cap)", &max_darkening, 0.3f, 1.f);
+  ImGui::Checkbox("AO fades in fog", &fog_fade);
+  ImGui::Checkbox("No AO at light sources", &light_protect);
+  ImGui::SliderFloat("Light source area (m)", &light_protect_m, 0.5f, 4.f);
+  ImGui::Checkbox("GTAO (Intel / Sandover method; off = our old AO)", &gtao);
+  ImGui::SliderInt("GTAO directions", &gtao_slices, 1, 4);
+  ImGui::SliderInt("GTAO steps", &gtao_steps, 1, 6);
+  ImGui::SliderFloat("GTAO radius (m)", &gtao_radius_m, 0.25f, 4.f);
+  ImGui::SliderFloat("GTAO intensity", &gtao_intensity, 0.1f, 1.f);
   ImGui::Separator();
   ImGui::RadioButton("Normal", &debug_view, 0);
   ImGui::SameLine();

@@ -49,6 +49,22 @@ class SSAO {
   bool sun_aware = true;
   float ao_sun_protect = 0.5f;  // how much AO is removed on surfaces in direct sun (0..1)
   float gi_sun_reduce = 0.7f;   // how much bounce light is removed in direct sun (0..1)
+
+  // (AI-assisted) after Project Sandover (ISC licence):
+  // - AO never darkens more than this (they cap at 0.8), with a soft knee so it eases into the cap
+  float max_darkening = 0.8f;
+  // - AO fades in the fog, like the game's own fog fades the surface's colour
+  bool fog_fade = true;
+  // - no AO right at a light source (fires, lamps, lava, eco): Sandover masks glowing surfaces;
+  //   we use the point lights' positions instead (strong lights protect a bigger area)
+  bool light_protect = true;
+  float light_protect_m = 1.5f;
+  // - GTAO (Intel's XeGTAO, via Sandover) instead of our spiral AO; off = the old look
+  bool gtao = true;
+  int gtao_slices = 4;          // Sandover: 1 low, 2 medium/high, 3 ultra (4: chosen in game)
+  int gtao_steps = 6;           // Sandover: 2 low/medium, 3 high/ultra (6: chosen in game)
+  float gtao_radius_m = 1.25f;  // Sandover's radius
+  float gtao_intensity = 0.75f; // Sandover: 0.70 (the composite's strength comes on top)
   // Jak 1: the effect runs right after this bucket is drawn (see buckets.h, jak1::BucketId).
   // Everything drawn after it is not darkened and does not cast AO.
   // 55 = MERC_AFTER_PRIS: Jak himself is drawn there, so this is the first bucket where he is included.

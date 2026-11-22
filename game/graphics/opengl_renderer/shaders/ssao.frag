@@ -35,6 +35,38 @@ uniform vec3 sun_dir;
 uniform float ao_sun_protect;
 uniform float gi_sun_reduce;
 
+// (AI-assisted) fog fade and light protection (after Project Sandover, ISC licence)
+uniform int world_ok;        // the camera uniforms are set
+uniform int fog_fade;
+uniform vec3 fog_w_row;      // clip w = -dot(fog_w_row, world - cam_trans)... see SSAO.cpp
+uniform vec3 fog_params;     // x = hvdf_offset.w, y = fog_min, z = fog_max
+uniform float fog_mult;      // fog_intensity / 255
+uniform int pl_count;
+uniform vec4 pl_pos_radius[16];  // xyz = world position (game units)
+uniform vec4 pl_color[16];
+uniform float light_protect_m;
+
+// how much of the surface's own colour the game's fog leaves (1 = no fog), like tfrag3.vert/.frag
+float fog_transmission(vec3 wp) {
+  vec3 v = wp - cam_trans;
+  float tw = -dot(fog_w_row, v);
+  float fogginess = 255.0 - clamp(-tw + fog_params.x, fog_params.y, fog_params.z);
+  return 1.0 - clamp(fogginess * fog_mult, 0.0, 1.0);
+}
+
+// 1 right at a strong light source, 0 away from all of them
+float light_protection(vec3 wp) {
+  float p = 0.0;
+  for (int i = 0; i < pl_count; i++) {
+    float lum = dot(pl_color[i].rgb, vec3(0.299, 0.587, 0.114));
+    float b = smoothstep(0.05, 0.6, lum);
+    float R = light_protect_m * clamp(sqrt(lum), 0.6, 2.0);
+    float d = length(wp - pl_pos_radius[i].xyz) / 4096.0;
+    p = max(p, b * (1.0 - smoothstep(0.35 * R, R, d)));
+  }
+  return p;
+}
+
 vec3 world_pos(vec2 uv) {
   float ndc_z = texture(depth_tex, uv).r * 2.0 - 1.0;
   float W = cam_params.x / (cam_params.y - ndc_z);
@@ -93,6 +125,181 @@ vec3 pick(vec3 p, vec3 a, vec3 b) {
   return abs(a.z - p.z) < abs(b.z - p.z) ? a - p : p - b;
 }
 
+// ---------------------------------------------------------------------------------------------
+// (AI-assisted) GTAO: the ground-truth AO main pass of Intel's XeGTAO, as ported to GLSL by
+// Project Sandover (ISC licence, github.com/bouzou4/project-sandover, shaders/ssao_ao.frag).
+// Changes for us: positions from our depth copy (no depth mips: every sample reads full res),
+// normals from depth only (Sandover also uses a normal target), sky counts as very far away,
+// a fixed noise pattern (no history; our blur removes it). XeGTAO's licence:
+/*
+  XeGTAO (https://github.com/GameTechDev/XeGTAO), based on "Jimenez et al. / Practical
+  Real-Time Strategies for Accurate Indirect Occlusion". Implementation: Filip Strugar, Steve
+  Mccalla. MIT License, Copyright (C) 2016-2021, Intel Corporation.
+  Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+  and associated documentation files (the "Software"), to deal in the Software without
+  restriction, including without limitation the rights to use, copy, modify, merge, publish,
+  distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions: The above copyright
+  notice and this permission notice shall be included in all copies or substantial portions of
+  the Software. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+  PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+  OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
+*/
+uniform int ao_method;        // 0 = our spiral AO, 1 = GTAO
+uniform int gtao_slices;      // directions per pixel (Sandover: 2 medium, 3 ultra)
+uniform int gtao_steps;       // samples per direction and side (2 medium, 3 high/ultra)
+uniform float gtao_radius;    // meters (Sandover 1.25)
+uniform float gtao_intensity; // darkening = intensity x sqrt(occlusion) (Sandover 0.70)
+
+#define G_PI 3.1415926535897932
+#define G_PI_HALF 1.5707963267948966
+
+// camera-space position of a full-res pixel; sky = very far along its ray
+vec3 gtao_pos(ivec2 px) {
+  ivec2 size = textureSize(depth_tex, 0);
+  px = clamp(px, ivec2(0), size - ivec2(1));
+  vec2 uv = (vec2(px) + 0.5) / vec2(size);
+  if (texelFetch(depth_tex, px, 0).r <= 0.0) {
+    vec2 ndc = uv * 2.0 - 1.0;
+    float z = 1e5;
+    return vec3(ndc.x * z / proj_scale.x, ndc.y * z / proj_scale.y, z);
+  }
+  return view_pos(uv);
+}
+
+float g_fastACos(float inX) {
+  float x = min(abs(inX), 1.0);
+  float res = (-0.156583 * x + G_PI_HALF) * sqrt(1.0 - x);
+  return inX >= 0.0 ? res : G_PI - res;
+}
+
+uint g_hilbertIndex(uint posX, uint posY) {
+  uint index = 0u;
+  for (uint curLevel = 32u; curLevel > 0u; curLevel >>= 1u) {
+    uint regionX = (posX & curLevel) > 0u ? 1u : 0u;
+    uint regionY = (posY & curLevel) > 0u ? 1u : 0u;
+    index += curLevel * curLevel * ((3u * regionX) ^ regionY);
+    if (regionY == 0u) {
+      if (regionX == 1u) {
+        posX = 63u - posX;
+        posY = 63u - posY;
+      }
+      uint temp = posX;
+      posX = posY;
+      posY = temp;
+    }
+  }
+  return index;
+}
+
+vec2 g_noise(ivec2 p) {
+  uint index = g_hilbertIndex(uint(p.x) & 63u, uint(p.y) & 63u);
+  return fract(0.5 + float(index) * vec2(0.75487766624669276005, 0.5698402909980532659114));
+}
+
+float g_sliceAngle(vec3 nrm, vec3 axisVec, vec3 orthoDirectionVec, vec3 viewVec, out float len,
+                   out float cosN) {
+  vec3 projected = nrm - axisVec * dot(nrm, axisVec);
+  float signNorm = sign(dot(orthoDirectionVec, projected));
+  len = length(projected);
+  cosN = clamp(dot(projected, viewVec) / max(len, 1e-6), 0.0, 1.0);
+  return signNorm * g_fastACos(cosN);
+}
+
+float g_iarc(float h, float n, float cosNorm) {
+  return (cosNorm + 2.0 * h * sin(n) - cos(2.0 * h - n)) * 0.25;
+}
+
+// visibility, 1 = unoccluded. ssC: the full-res pixel, C0: its position, n_F: its facet normal
+// (facing the camera)
+float gtao_visibility(ivec2 ssC, vec3 C0, vec3 n_F) {
+  ivec2 size = textureSize(depth_tex, 0);
+  float viewspaceZ = C0.z * 0.99999;
+  vec3 pixCenterPos = C0 * 0.99999;
+  vec3 viewVec = normalize(-pixCenterPos);
+
+  const float radius_mul = 1.457;     // XE_GTAO_DEFAULT_RADIUS_MULTIPLIER
+  const float falloff_range = 0.615;  // XE_GTAO_DEFAULT_FALLOFF_RANGE
+  const float sample_power = 2.0;     // XE_GTAO_DEFAULT_SAMPLE_DISTRIBUTION_POWER
+  const float thin_comp = 0.0;        // Sandover: 0
+  float effectRadius = gtao_radius * radius_mul;
+  float falloffRange = falloff_range * effectRadius;
+  float falloffFrom = effectRadius * (1.0 - falloff_range);
+  float falloffMul = -1.0 / falloffRange;
+  float falloffAdd = falloffFrom / falloffRange + 1.0;
+
+  vec2 localNoise = g_noise(ivec2(gl_FragCoord.xy));
+  float noiseSlice = localNoise.x;
+  float noiseSample = localNoise.y;
+  // meters per full-res pixel per meter of distance
+  float px_m = 2.0 / (float(size.x) * proj_scale.x);
+  float screenspaceRadius = effectRadius / (viewspaceZ * px_m);
+  float fade = clamp((10.0 - screenspaceRadius) / 100.0, 0.0, 1.0) * 0.5;
+  float minS = 1.3 / screenspaceRadius;
+  float sliceCount = float(gtao_slices);
+  float stepsPerSlice = float(gtao_steps);
+
+  float vis = 0.0;
+  float visRef = 0.0;
+  for (int slice = 0; slice < gtao_slices; slice++) {
+    float phi = (float(slice) + noiseSlice) / sliceCount * G_PI;
+    float cosPhi = cos(phi);
+    float sinPhi = sin(phi);
+    vec2 omega = vec2(cosPhi, sinPhi) * screenspaceRadius;
+    vec3 directionVec = vec3(cosPhi, sinPhi, 0.0);
+    vec3 orthoDirectionVec = directionVec - dot(directionVec, viewVec) * viewVec;
+    vec3 axisVec = normalize(cross(orthoDirectionVec, viewVec));
+
+    float projectedNormalVecLength, cosNorm;
+    float n = g_sliceAngle(n_F, axisVec, orthoDirectionVec, viewVec, projectedNormalVecLength,
+                           cosNorm);
+    float lowHorizonCos0 = cos(n + G_PI_HALF);
+    float lowHorizonCos1 = cos(n - G_PI_HALF);
+    float horizonCos0 = lowHorizonCos0;
+    float horizonCos1 = lowHorizonCos1;
+
+    for (int step = 0; step < gtao_steps; step++) {
+      float stepBaseNoise = float(slice + step * gtao_steps) * 0.6180339887498948482;
+      float stepNoise = fract(noiseSample + stepBaseNoise);
+      float s = (float(step) + stepNoise) / stepsPerSlice;
+      s = pow(s, sample_power);
+      s += minS;
+      ivec2 o = ivec2(round(s * omega));
+
+      vec3 sampleDelta0 = gtao_pos(ssC + o) - pixCenterPos;
+      vec3 sampleDelta1 = gtao_pos(ssC - o) - pixCenterPos;
+      float sampleDist0 = length(sampleDelta0);
+      float sampleDist1 = length(sampleDelta1);
+      vec3 sampleHorizonVec0 = sampleDelta0 / max(sampleDist0, 1e-6);
+      vec3 sampleHorizonVec1 = sampleDelta1 / max(sampleDist1, 1e-6);
+
+      float falloffBase0 = length(vec3(sampleDelta0.xy, sampleDelta0.z * (1.0 + thin_comp)));
+      float falloffBase1 = length(vec3(sampleDelta1.xy, sampleDelta1.z * (1.0 + thin_comp)));
+      float weight0 = clamp(falloffBase0 * falloffMul + falloffAdd, 0.0, 1.0);
+      float weight1 = clamp(falloffBase1 * falloffMul + falloffAdd, 0.0, 1.0);
+
+      float shc0 = mix(lowHorizonCos0, dot(sampleHorizonVec0, viewVec), weight0);
+      float shc1 = mix(lowHorizonCos1, dot(sampleHorizonVec1, viewVec), weight1);
+      horizonCos0 = max(horizonCos0, shc0);
+      horizonCos1 = max(horizonCos1, shc1);
+    }
+
+    projectedNormalVecLength = mix(projectedNormalVecLength, 1.0, 0.05);
+    float h0 = -g_fastACos(horizonCos1);
+    float h1 = g_fastACos(horizonCos0);
+    float r0 = -g_fastACos(lowHorizonCos1);
+    float r1 = g_fastACos(lowHorizonCos0);
+    vis += projectedNormalVecLength * (g_iarc(h0, n, cosNorm) + g_iarc(h1, n, cosNorm));
+    visRef += projectedNormalVecLength * (g_iarc(r0, n, cosNorm) + g_iarc(r1, n, cosNorm));
+  }
+  float v = visRef > 1e-4 ? clamp(vis / visRef, 0.0, 1.0) : 1.0;
+  return clamp(v + fade / sliceCount, 0.0, 1.0);
+}
+// ---------------------------------------------------------------------------------------------
+
 void main() {
   // At half resolution our pixel centers fall exactly between two full-res depth texels, so
   // nearest sampling would randomly pick one or the other and produce dotted lines.
@@ -133,7 +340,9 @@ void main() {
   float r2 = radius * radius;
   float total_bias = bias + bias_per_m * p.z;
   float sum = 0.0;
-  for (int i = 0; i < NUM_SAMPLES; i++) {
+  // (AI-assisted) GTAO instead of the spiral: no spiral samples (the loop runs 0 times)
+  int spiral_samples = ao_method == 1 ? 0 : NUM_SAMPLES;
+  for (int i = 0; i < spiral_samples; i++) {
     float alpha = (float(i) + 0.5) / float(NUM_SAMPLES);
     float angle = alpha * NUM_TURNS * 6.2831853 + rot;
     vec2 offset = vec2(cos(angle), sin(angle)) * alpha * radius_uv;
@@ -154,6 +363,12 @@ void main() {
   }
 
   float ao = max(0.0, 1.0 - sum * intensity * 5.0 / (r2 * r2 * r2 * float(NUM_SAMPLES)));
+  if (ao_method == 1) {
+    // (AI-assisted) GTAO, with Sandover's response: darkening = intensity x sqrt(occlusion)
+    ivec2 ssC = ivec2(uv0 / depth_texel);
+    float v = gtao_visibility(ssC, p, n);
+    ao = 1.0 - gtao_intensity * sqrt(clamp(1.0 - v, 0.0, 1.0));
+  }
 
   // fade out with distance
   float fade = clamp((max_distance - p.z) / (0.25 * max_distance), 0.0, 1.0);
@@ -192,6 +407,20 @@ void main() {
     }
     gi *= 2.0 / float(GI_SAMPLES);
     gi *= fade;
+  }
+
+  // (AI-assisted) fog: AO and bounce light fade with the fog, as the surface's own colour does;
+  // light sources: no AO right where a fire, lamp, lava or eco light sits
+  if (world_ok == 1) {
+    vec3 wp = world_pos(uv0);
+    if (fog_fade == 1) {
+      float t = fog_transmission(wp);
+      out_color.r = mix(1.0, out_color.r, t);
+      gi *= t;
+    }
+    if (pl_count > 0) {
+      out_color.r = mix(out_color.r, 1.0, light_protection(wp));
+    }
   }
 
   // sun aware: AO only darkens light from the sky, and bounce light matters less in direct sun
