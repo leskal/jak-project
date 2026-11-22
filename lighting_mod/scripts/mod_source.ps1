@@ -45,8 +45,10 @@ $mod = [ordered]@{
   displayName    = "Jak 1 Realistic Lighting"
   description    = ("Realistic lighting for Jak and Daxter, gameplay untouched: a real sun with shadows " +
                     "(also from far away and from characters), sun and sky colors from the time of day, " +
-                    "ambient occlusion and bounce light, lights and shadows from fire and glowing objects, " +
-                    "auto exposure, and water with waves, reflections, sun glints and ripples around Jak. " +
+                    "ambient occlusion (GTAO) and bounce light, light and shadows from fires, lamps, lava " +
+                    "and glowing surfaces, bloom, auto exposure, and water with waves, clear shallows that " +
+                    "turn blue-green with depth, refraction, foam, a wet shoreline, sky reflections and " +
+                    "sun glints. " +
                     "Everything can be tuned in the Renderer Debug window (Debugging menu).")
   authors        = @("leskal")
   tags           = @("graphics", "visual", "lighting")
