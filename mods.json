@@ -1,52 +1,62 @@
 {
-    "schemaVersion":  "1.0.0",
-    "sourceName":  "Jak 1 Realistic Lighting",
-    "lastUpdated":  "2026-11-16T15:05:00Z",
-    "mods":  {
-                 "jak1-realistic-lighting":  {
-                                                 "displayName":  "Jak 1 Realistic Lighting",
-                                                 "description":  "Realistic lighting for Jak and Daxter, gameplay untouched: a real sun with shadows (also from far away and from characters), sun and sky colors from the time of day, ambient occlusion and bounce light, lights and shadows from fire and glowing objects, auto exposure, and water with waves, reflections, sun glints and ripples around Jak. Everything can be tuned in the Renderer Debug window (Debugging menu).",
-                                                 "authors":  [
-                                                                 "leskal"
-                                                             ],
-                                                 "tags":  [
-                                                              "graphics",
-                                                              "visual",
-                                                              "lighting"
-                                                          ],
-                                                 "supportedGames":  [
-                                                                        "jak1"
-                                                                    ],
-                                                 "websiteUrl":  "https://github.com/leskal/jak-project/tree/gi-mod",
-                                                 "versions":  [
-                                                                  {
-                                                                      "version":  "0.2.0",
-                                                                      "publishedDate":  "2026-11-16T15:05:00Z",
-                                                                      "assets":  {
-                                                                                     "windows":  "https://github.com/leskal/jak-project/releases/download/v0.2.0/windows-jak1-realistic-lighting-v0.2.0.zip",
-                                                                                     "linux":  null,
-                                                                                     "macos":  null
-                                                                                 },
-                                                                      "supportedGames":  [
-                                                                                             "jak1"
-                                                                                         ]
-                                                                  },
-                                                                  {
-                                                                      "version":  "0.1.0",
-                                                                      "publishedDate":  "2026-11-16T12:16:51Z",
-                                                                      "assets":  {
-                                                                                     "windows":  "https://github.com/leskal/jak-project/releases/download/v0.1.0/windows-jak1-realistic-lighting-v0.1.0.zip",
-                                                                                     "linux":  null,
-                                                                                     "macos":  null
-                                                                                 },
-                                                                      "supportedGames":  [
-                                                                                             "jak1"
-                                                                                         ]
-                                                                  }
-                                                              ]
-                                             }
-             },
-    "texturePacks":  {
-
-                     }
+    "schemaVersion": "1.0.0",
+    "sourceName": "Jak 1 Realistic Lighting",
+    "lastUpdated": "2026-11-22T10:51:09Z",
+    "mods": {
+        "jak1-realistic-lighting": {
+            "displayName": "Jak 1 Realistic Lighting",
+            "description": "Realistic lighting for Jak and Daxter, gameplay untouched: a real sun with shadows (also from far away and from characters), sun and sky colors from the time of day, ambient occlusion (GTAO) and bounce light, light and shadows from fires, lamps, lava and glowing surfaces, bloom, auto exposure, and water with waves, clear shallows that turn blue-green with depth, refraction, foam, a wet shoreline, sky reflections and sun glints. Everything can be tuned in the Renderer Debug window (Debugging menu).",
+            "authors": [
+                "leskal"
+            ],
+            "tags": [
+                "graphics",
+                "visual",
+                "lighting"
+            ],
+            "supportedGames": [
+                "jak1"
+            ],
+            "websiteUrl": "https://github.com/leskal/jak-project/tree/gi-mod",
+            "versions": [
+                {
+                    "version": "0.3.0",
+                    "publishedDate": "2026-11-22T10:51:09Z",
+                    "assets": {
+                        "windows": "https://github.com/leskal/jak-project/releases/download/v0.3.0/windows-jak1-realistic-lighting-v0.3.0.zip",
+                        "linux": null,
+                        "macos": null
+                    },
+                    "supportedGames": [
+                        "jak1"
+                    ]
+                },
+                {
+                    "version": "0.2.0",
+                    "publishedDate": "2026-11-16T15:05:00Z",
+                    "assets": {
+                        "windows": "https://github.com/leskal/jak-project/releases/download/v0.2.0/windows-jak1-realistic-lighting-v0.2.0.zip",
+                        "linux": null,
+                        "macos": null
+                    },
+                    "supportedGames": [
+                        "jak1"
+                    ]
+                },
+                {
+                    "version": "0.1.0",
+                    "publishedDate": "2026-11-16T12:16:51Z",
+                    "assets": {
+                        "windows": "https://github.com/leskal/jak-project/releases/download/v0.1.0/windows-jak1-realistic-lighting-v0.1.0.zip",
+                        "linux": null,
+                        "macos": null
+                    },
+                    "supportedGames": [
+                        "jak1"
+                    ]
+                }
+            ]
+        }
+    },
+    "texturePacks": {}
 }
